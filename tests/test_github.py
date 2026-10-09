@@ -314,6 +314,8 @@ class IssuesAndMerged(unittest.TestCase):
             "isDraft": False,
             "baseRefName": "master",
             "mergedAt": "2026-10-08T03:00:00Z",
+            "author": {"login": "r-ryantm"},
+            "mergedBy": None,  # a deleted account
         }
         answer = {
             "search": {
@@ -337,6 +339,8 @@ class IssuesAndMerged(unittest.TestCase):
                 "draft": False,
                 "base": "master",
                 "merged": "2026-10-08T03:00:00Z",
+                "author": "r-ryantm",
+                "mergedBy": "ghost",
             },
         )
         too_many = {"search": {**answer["search"], "issueCount": 1001}}
