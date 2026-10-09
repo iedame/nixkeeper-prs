@@ -18,12 +18,24 @@
   <label>Search <input id="q" type="search" placeholder="title, author, #number"></label>
   <label>Maintainer <input id="maintainer" type="search" placeholder="@handle"></label>
   <label>Bucket <select id="bucket"><option value="">any</option></select></label>
+  <label>Branch <select id="base"><option value="">any</option></select></label>
+  <label>Rebuilds <select id="rebuilds">
+    <option value="">any</option>
+    <option value="0">none</option>
+    <option value="10">at most 10</option>
+    <option value="100">at most 100</option>
+    <option value="500">at most 500</option>
+  </select></label>
+  <label>Label <input id="label" type="search" list="labels" placeholder="nixpkgs label"></label>
+  <datalist id="labels"></datalist>
   <label>Sort <select id="sort">
     <option value="">the view's usual</option>
     <option value="updated">oldest update first</option>
     <option value="recent">newest update first</option>
     <option value="created">oldest first</option>
     <option value="small">smallest first</option>
+    <option value="rebuilds">fewest rebuilds first</option>
+    <option value="approvals">most approvals first</option>
   </select></label>
   <label><input id="hideDrafts" type="checkbox" checked> hide drafts</label>
 </form></search>

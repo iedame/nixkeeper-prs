@@ -14,6 +14,11 @@ from nixkeeper.versions import is_newer
 from .sources import BY_NAME, canonical
 
 BOT = "r-ryantm"
+# nixpkgs' CI opens PRs of its own (automated, like the update bot's).
+CI_BOT = "nixpkgs-ci"
+# nixpkgs' CI labels a PR the merge bot would merge for a maintainer (it
+# knows who's a committer: the digest doesn't).
+MERGE_BOT_LABEL = "2.status: merge-bot eligible"
 # nixpkgs' title conventions (CONTRIBUTING.md): "attr: 1.0 -> 1.1",
 # "attr: init at 1.0", "attr: drop", "attr: remove".
 UPDATE = re.compile(r"^([\w.+-]+): (\S+) (?:->|→) (\S+)\s*$")
@@ -69,6 +74,8 @@ def buckets(pr, kind, packages, only_by_name):
         found.append("tiny")
     if pr["author"] == BOT:
         found.append("bot")
+    if pr["author"] == CI_BOT:
+        found.append("ci-bot")
     for name, pattern in ECOSYSTEMS:
         if any(pattern.search(f) for f in pr["files"]):
             found.append(name)
@@ -113,21 +120,29 @@ def blocks_bot(pr, attr, frm, to, queue):
 
 def merge_bot(pr, only_by_name, packages, index):
     """Whether a maintainer can merge it with the merge bot (nixpkgs'
-    ci/README.md), as far as the digest can tell: by-name only, into a
-    development branch, opened by r-ryantm (a committer's approval also
-    counts, but who's a committer isn't known here: approvedBy says who
-    approved), no changes requested; and who could (the maintainers of
-    every package it touches). {"ready": CI green, "maintainers": [...]}
-    or None."""
-    if not only_by_name or pr["base"] not in DEVELOPMENT or pr["draft"]:
+    ci/README.md), and who could (the maintainers of every package it
+    touches). nixpkgs' CI says so with its label (MERGE_BOT_LABEL: it also
+    counts committers' PRs and approvals); without it, as far as the
+    digest can tell: by-name only, into a development branch, opened by
+    r-ryantm, no changes requested. {"ready": CI green, "maintainers":
+    [...], "label": True when the label says so} or None."""
+    labelled = MERGE_BOT_LABEL in pr["labels"]
+    if pr["draft"] or (not labelled and not only_by_name):
         return None
-    if pr["author"] != BOT or pr["review"] == "CHANGES_REQUESTED":
+    if not labelled and (
+        pr["base"] not in DEVELOPMENT
+        or pr["author"] != BOT
+        or pr["review"] == "CHANGES_REQUESTED"
+    ):
         return None
     each = [set((index.get(p) or {}).get("maintainers") or []) for p in packages]
     maintainers = sorted(set.intersection(*each)) if each else []
-    if not maintainers:
+    if not maintainers and not labelled:
         return None
-    return {"ready": pr["ci"] == "SUCCESS", "maintainers": maintainers}
+    found = {"ready": pr["ci"] == "SUCCESS", "maintainers": maintainers}
+    if labelled:
+        found["label"] = True
+    return found
 
 
 def analyse(prs, index, master, queue, hashes):

@@ -10,14 +10,81 @@ const PR_URL = 'https://github.com/NixOS/nixpkgs/pull/';
 const GHDIFF_URL = 'https://ghdiff.com/NixOS/nixpkgs/pull/';
 const STEP = 200;
 
+// nixpkgs' CI labels: what it says about a PR, more reliably than the
+// API's fields (GitHub's merge state is UNKNOWN for most PRs).
+const has = (p, label) => p.labels.includes(label);
+const hasPrefix = (p, prefix) => p.labels.some((l) => l.startsWith(prefix));
+// nixpkgs' CI's verdict, or the digest's own for r-ryantm's PRs.
+const mergeBotEligible = (p) => has(p, '2.status: merge-bot eligible') || Boolean(p.mergeBot);
+const conflicts = (p) => has(p, '2.status: merge conflict') || p.mergeable === 'CONFLICTING';
+const DAY_MS = 86400e3;
+const daysSince = (iso) => (Date.now() - new Date(iso)) / DAY_MS;
+// How many packages a PR rebuilds, the most of Linux's and Darwin's labels
+// ("10.rebuild-linux: 11-100" → 11): null when CI hasn't said.
+function rebuilds(p) {
+  let most = null;
+  for (const l of p.labels) {
+    const m = /^10\.rebuild-(?:linux|darwin): (\d+)/.exec(l);
+    if (m) most = Math.max(most ?? 0, Number(m[1]));
+  }
+  return most;
+}
+// Approvals, by nixpkgs' label ("12.approvals: 3+") or the reviews read.
+function approvals(p) {
+  const m = p.labels.map((l) => /^12\.approvals: (\d+)/.exec(l)).find(Boolean);
+  return Math.max(m ? Number(m[1]) : 0, p.approvedBy.length);
+}
+
 // What to act on, each a test on a PR (groups: the digest's duplicates).
 const VIEWS = {
   all: { label: 'All open', test: () => true },
   mergeBot: {
     label: 'Merge it yourself',
     title:
-      "r-ryantm's by-name PRs with CI green: a maintainer of every package can merge with the merge bot",
-    test: (p) => p.mergeBot?.ready,
+      "Merge-bot eligible (nixpkgs CI's label, or r-ryantm's by-name PRs) with CI green: a maintainer of every package it touches can merge it with the merge bot",
+    test: (p) => mergeBotEligible(p) && p.ci === 'SUCCESS' && !conflicts(p),
+  },
+  needsCommitter: {
+    label: 'Needs a committer',
+    title:
+      "Approved by a package maintainer, CI green, no conflict, no changes requested, and not merge-bot eligible: one committer's merge",
+    test: (p) =>
+      has(p, '12.approved-by: package-maintainer') &&
+      p.ci === 'SUCCESS' &&
+      !conflicts(p) &&
+      p.review !== 'CHANGES_REQUESTED' &&
+      !mergeBotEligible(p),
+  },
+  security: {
+    label: 'Security',
+    title: "nixpkgs' security severity label",
+    test: (p) => has(p, '1.severity: security'),
+  },
+  firstTime: {
+    label: 'First-time, unreviewed',
+    title: 'First-time contributions with no review at all, opened over 30 days ago',
+    test: (p) =>
+      has(p, '12.first-time contribution') &&
+      !p.approvedBy.length &&
+      !p.review &&
+      daysSince(p.created) > 30,
+  },
+  noReviewers: {
+    label: 'No reviewers',
+    title: 'No default reviewers: no maintainer was asked to review it',
+    test: (p) => has(p, '7.no default reviewers'),
+  },
+  noRebuild: {
+    label: 'No rebuilds',
+    title: "Rebuilds nothing on Linux or Darwin (CI says 0): can't break builds",
+    test: (p) => rebuilds(p) === 0,
+  },
+  abandoned: {
+    label: 'Likely abandoned',
+    title: 'Changes requested and untouched for 90 days, or stale and conflicted: close or adopt',
+    test: (p) =>
+      (p.review === 'CHANGES_REQUESTED' && daysSince(p.updated) > 90) ||
+      (has(p, '2.status: stale') && conflicts(p)),
   },
   superseded: {
     label: 'Superseded',
@@ -79,13 +146,16 @@ function readFilters() {
   $('maintainer').value = params.get('maintainer') || '';
   $('bucket').value = params.get('bucket') || '';
   $('sort').value = params.get('sort') || '';
+  $('base').value = params.get('base') || '';
+  $('rebuilds').value = params.get('rebuilds') || '';
+  $('label').value = params.get('label') || '';
   $('hideDrafts').checked = params.get('drafts') !== 'shown';
 }
 
 function writeFilters() {
   const params = new URLSearchParams();
   if (view !== 'all') params.set('view', view);
-  for (const id of ['q', 'maintainer', 'bucket', 'sort'])
+  for (const id of ['q', 'maintainer', 'bucket', 'base', 'rebuilds', 'label', 'sort'])
     if ($(id).value) params.set(id, $(id).value);
   if (!$('hideDrafts').checked) params.set('drafts', 'shown');
   const query = params.toString();
@@ -101,6 +171,15 @@ function filtered(p) {
   if ($('hideDrafts').checked && p.draft) return false;
   const bucket = $('bucket').value;
   if (bucket && !p.buckets.includes(bucket)) return false;
+  const base = $('base').value;
+  if (base && p.base !== base) return false;
+  const size = $('rebuilds').value;
+  if (size) {
+    const r = rebuilds(p);
+    if (r === null || r > Number(size)) return false;
+  }
+  const label = $('label').value.trim().toLowerCase();
+  if (label && !p.labels.some((l) => l.toLowerCase().includes(label))) return false;
   const handle = $('maintainer').value.trim().replace(/^@/, '').toLowerCase();
   if (handle) {
     const theirs = (p.mergeBot?.maintainers || p.maintainers || []).map((m) => m.toLowerCase());
@@ -139,7 +218,13 @@ function facts(p) {
         .join(' ')}</span>`,
     );
   }
-  if (p.mergeable === 'CONFLICTING') out.push('<span class="fact bad">conflicts</span>');
+  if (conflicts(p)) out.push('<span class="fact bad">conflicts</span>');
+  if (has(p, '1.severity: security')) out.push('<span class="fact bad">security</span>');
+  const r = rebuilds(p);
+  if (r !== null && r >= 501)
+    out.push(
+      `<span class="fact" title="Packages rebuilt (CI's label)">rebuilds ${r.toLocaleString()}+</span>`,
+    );
   if (p.review === 'CHANGES_REQUESTED') out.push('<span class="fact bad">changes requested</span>');
   else if (p.approvedBy.length)
     out.push(
@@ -160,6 +245,11 @@ const SORTS = {
   recent: (a, b) => b.updated.localeCompare(a.updated),
   created: (a, b) => a.created.localeCompare(b.created),
   small: (a, b) => a.additions + a.deletions - (b.additions + b.deletions),
+  // Fewest rebuilds first (the safest), unknown last.
+  rebuilds: (a, b) =>
+    (rebuilds(a) ?? 1e9) - (rebuilds(b) ?? 1e9) || a.updated.localeCompare(b.updated),
+  // Most approvals first (the closest to done).
+  approvals: (a, b) => approvals(b) - approvals(a) || a.updated.localeCompare(b.updated),
   bot: (a, b) =>
     (a.blocksBot?.by || '9999').localeCompare(b.blocksBot?.by || '9999') ||
     a.updated.localeCompare(b.updated),
@@ -253,6 +343,17 @@ async function main() {
         `<button type="button" data-view="${key}" title="${esc(v.title || '')}">${esc(v.label)} <b>${prs.filter(v.test).length.toLocaleString()}</b></button>`,
     )
     .join('');
+  const bases = Object.entries(
+    prs.reduce((n, p) => ({ ...n, [p.base]: (n[p.base] || 0) + 1 }), {}),
+  ).sort((a, b) => b[1] - a[1]);
+  $('base').insertAdjacentHTML(
+    'beforeend',
+    bases
+      .map(([b, n]) => `<option value="${esc(b)}">${esc(b)} (${n.toLocaleString()})</option>`)
+      .join(''),
+  );
+  const labels = [...new Set(prs.flatMap((p) => p.labels))].sort();
+  $('labels').innerHTML = labels.map((l) => `<option value="${esc(l)}"></option>`).join('');
   const buckets = [...new Set(prs.flatMap((p) => p.buckets))].sort();
   $('bucket').insertAdjacentHTML(
     'beforeend',

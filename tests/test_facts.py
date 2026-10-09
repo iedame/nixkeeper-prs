@@ -84,6 +84,15 @@ class MergeBot(unittest.TestCase):
             facts.merge_bot(p, True, ["foo", "bar"], INDEX)["maintainers"], ["bob"]
         )
 
+    def test_nixpkgs_ci_label_says_so(self):
+        """A person's PR a committer approved: the digest can't tell, the
+        label can."""
+        p = pr(1, "foo: 1.0 -> 1.1", labels=[facts.MERGE_BOT_LABEL])
+        self.assertEqual(
+            facts.merge_bot(p, True, ["foo"], INDEX),
+            {"ready": True, "maintainers": ["Alice", "bob"], "label": True},
+        )
+
     def test_not_eligible(self):
         bot = pr(1, "foo: 1.0 -> 1.1", author="r-ryantm")
         self.assertIsNone(facts.merge_bot(bot, False, ["foo"], INDEX))  # not by-name

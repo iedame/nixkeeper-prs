@@ -22,7 +22,7 @@ On the `data` branch:
   what the digest makes of it:
   - `buckets`: `update`, `init`, `drop` (by its title, nixpkgs'
     conventions), `by-name` (touches only `pkgs/by-name`), `tiny` (at most
-    10 lines in 2 files), `bot` (r-ryantm's), `python`, `haskell`, `node`,
+    10 lines in 2 files), `bot` (r-ryantm's), `ci-bot` (nixpkgs-ci's), `python`, `haskell`, `node`,
     `nixos`, `lib`, `ci`, `docs` (by path), `treewide` (50 files or more)
   - `packages` (the `pkgs/by-name` ones it touches) and their
     `maintainers` (the channel's index)
@@ -35,12 +35,12 @@ On the `data` branch:
     that package (nixkeeper-updates' queue), when this PR, not the bot's,
     has it: the bot finds it and skips the update
   - `mergeBot`: when a maintainer can merge it with the
-    [merge bot](https://github.com/NixOS/nixpkgs/blob/master/ci/README.md#nixpkgs-merge-bot)
-    (r-ryantm's, `pkgs/by-name` only, into a development branch, no changes
-    requested): `ready` (CI green) and the `maintainers` of every package it
-    touches. A committer's approval also makes a PR eligible; who's a
-    committer isn't known here, so those aren't marked (`approvedBy` says
-    who approved)
+    [merge bot](https://github.com/NixOS/nixpkgs/blob/master/ci/README.md#nixpkgs-merge-bot):
+    nixpkgs' CI labels it `2.status: merge-bot eligible` (it knows who's a
+    committer, so it also counts committers' PRs and approvals; `label`:
+    true), or, without the label, r-ryantm's PRs touching only
+    `pkgs/by-name`, into a development branch, no changes requested;
+    `ready` (CI green) and the `maintainers` of every package it touches
   - `diff`: the fingerprint of its diff (blob ids and hunk positions left
     out: the same change made on another base is the same)
 
