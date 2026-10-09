@@ -56,6 +56,18 @@ const HINTS = {
   noPythonImportsCheck: 'no pythonImportsCheck',
 };
 
+// An update to an older version (the digest's "downgrade"; older digests
+// said "backwards" for these and the snapshot ones alike).
+const isDowngrade = (p) => p.state === 'downgrade' || p.state === 'backwards';
+const STATES = {
+  superseded: 'superseded',
+  overtaken: 'overtaken',
+  downgrade: 'downgrade',
+  backwards: 'backwards',
+  snapshotToRelease: 'snapshot → release',
+  preRelease: 'pre-release suffix',
+};
+
 // What to act on, each a test on a PR (groups: the digest's duplicates).
 const VIEWS = {
   all: { label: 'All open', test: () => true },
@@ -128,10 +140,28 @@ const VIEWS = {
     title: 'PRs with the same diff as another, or several open for one package',
     test: (p) => duplicateOf.has(p.n),
   },
-  backwards: {
-    label: 'Backwards',
-    title: 'Updates whose new version sorts below the old: a downgrade, or a version scheme change',
-    test: (p) => p.state === 'backwards',
+  downgrade: {
+    label: 'Downgrades',
+    title: "Updates to a version older than the one they start from, by Nix's own order",
+    test: (p) => isDowngrade(p),
+  },
+  botDowngrade: {
+    label: 'Bot downgrades',
+    title:
+      "r-ryantm's downgrades (an updateScript picking an older release): to close, and to tell nixpkgs-update",
+    test: (p) => isDowngrade(p) && p.author === 'r-ryantm',
+  },
+  snapshotToRelease: {
+    label: 'Snapshot → release',
+    title:
+      'From an unstable snapshot to a tagged release, older by Nix: usually a deliberate switch back',
+    test: (p) => p.state === 'snapshotToRelease',
+  },
+  preRelease: {
+    label: 'Pre-release suffix',
+    title:
+      'Newer for Nix, a pre-release for libversion (1.1.0 -> 1.1.0.dev0, 3.1 -> 3.1_p1): worth a look',
+    test: (p) => p.state === 'preRelease',
   },
   versionOnly: {
     label: 'Version bump only',
@@ -229,7 +259,7 @@ function facts(p) {
   if (p.state) {
     const u = p.update;
     out.push(
-      `<span class="fact warn" title="${esc(`${u.attr}: ${u.from} -> ${u.to}; nixpkgs has ${u.now}`)}">${p.state} (has ${esc(u.now)})</span>`,
+      `<span class="fact warn" title="${esc(`${u.attr}: ${u.from} -> ${u.to}; nixpkgs has ${u.now}`)}">${esc(STATES[p.state] || p.state)}${['superseded', 'overtaken'].includes(p.state) ? ` (has ${esc(u.now)})` : ''}</span>`,
     );
   }
   if (p.blocksBot) {

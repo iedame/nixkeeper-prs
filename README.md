@@ -27,10 +27,15 @@ On the `data` branch:
   - `packages` (the `pkgs/by-name` ones it touches) and their
     `maintainers` (the channel's index)
   - `update` (`attr`, `from`, `to`, and `now`: what nixpkgs has, master's
-    version or else the channel's) and `state`: `superseded` (nixpkgs
-    moved past `from` and has `to` or newer: close it), `overtaken`
-    (nixpkgs moved past `from`, not up to `to`: rebase it), `backwards`
-    (`to` sorts below `from`: a downgrade, or a version scheme change)
+    version or else the channel's; a title is an update only with a digit
+    on both sides) and `state`. By Nix's own order (`builtins.compareVersions`,
+    ported in `nixversions.py` and checked against Nix on every open
+    update's versions): `downgrade` (`to` is older), `snapshotToRelease`
+    (from an `-unstable-` snapshot to a release, older for Nix: usually a
+    deliberate switch back), `preRelease` (newer for Nix, a pre-release for
+    libversion: `1.1.0 -> 1.1.0.dev0`). Against nixpkgs now, by nixkeeper's
+    order: `superseded` (nixpkgs moved past `from` and has `to` or newer:
+    close it), `overtaken` (moved past `from`, not up to `to`: rebase it)
   - `blocksBot`: the title the update bot would use for its next update of
     that package (nixkeeper-updates' queue), when this PR, not the bot's,
     has it: the bot finds it and skips the update

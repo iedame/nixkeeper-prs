@@ -11,6 +11,7 @@ import re
 
 from nixkeeper.versions import is_newer
 
+from . import nixversions
 from .sources import BY_NAME, canonical
 
 BOT = "r-ryantm"
@@ -24,6 +25,10 @@ MERGE_BOT_LABEL = "2.status: merge-bot eligible"
 UPDATE = re.compile(r"^([\w.+-]+): (\S+) (?:->|→) (\S+)\s*$")
 INIT = re.compile(r"^([\w.+-]+): init at \S+", re.IGNORECASE)
 DROP = re.compile(r"^([\w.+-]+): (?:drop|remove)\b", re.IGNORECASE)
+# A version has a digit somewhere: "ci: npins → flake" is no update.
+DIGIT = re.compile(r"\d")
+# A snapshot's version (nixpkgs' "0.1.0-unstable-2024-09-01", or a date).
+SNAPSHOT = re.compile(r"unstable|\d{4}-\d{2}-\d{2}")
 # How small a change is "tiny": lines added and removed, and files.
 TINY_LINES = 10
 TINY_FILES = 2
@@ -44,7 +49,8 @@ DEVELOPMENT = {"master", "staging", "staging-next"}
 def title_parts(title):
     """(kind, attr, from, to) of a conventional title: update, init or drop
     (from/to None but for updates); (None, ...) for any other."""
-    if m := UPDATE.match(title):
+    m = UPDATE.match(title)
+    if m and DIGIT.search(m.group(2)) and DIGIT.search(m.group(3)):
         return "update", m.group(1), m.group(2), m.group(3)
     if m := INIT.match(title):
         return "init", m.group(1), None, None
@@ -85,13 +91,21 @@ def buckets(pr, kind, packages, only_by_name):
 
 
 def update_state(frm, to, now):
-    """Where an update ("frm -> to") stands against what nixpkgs has now
-    (now: master's version, else the channel's): "superseded" (nixpkgs
-    moved past frm and has to, or newer: close it), "overtaken" (nixpkgs
-    moved past frm, not up to to: rebase), "backwards" (to sorts below frm:
-    a downgrade or a version scheme change), or None."""
+    """Where an update ("frm -> to") stands. Backwards by Nix's own order
+    (nixversions: what nixpkgs calls newer): "snapshotToRelease" (from a
+    snapshot, 0.1.0-unstable-2024-09-01, to a release: usually a deliberate
+    switch back to a tagged release) or "downgrade". "preRelease": newer for
+    Nix, older for libversion, which reads the suffix as a pre-release
+    (1.1.0 -> 1.1.0.dev0, 3.1 -> 3.1_p1): worth a look. Against what nixpkgs
+    has now (now: master's version, else the channel's), by nixkeeper's
+    order: "superseded" (nixpkgs moved past frm and has to, or newer: close
+    it), "overtaken" (moved past frm, not up to to: rebase). Else None."""
+    if nixversions.compare(to, frm) < 0:
+        if SNAPSHOT.search(frm) and not SNAPSHOT.search(to):
+            return "snapshotToRelease"
+        return "downgrade"
     if is_newer(frm, to):
-        return "backwards"
+        return "preRelease"
     if not now or now == frm:
         return None
     if not is_newer(to, now):

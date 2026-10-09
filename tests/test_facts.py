@@ -43,6 +43,9 @@ class Titles(unittest.TestCase):
         self.assertEqual(facts.title_parts("foo: init at 0.1")[:2], ("init", "foo"))
         self.assertEqual(facts.title_parts("foo: drop")[:2], ("drop", "foo"))
         self.assertEqual(facts.title_parts("treewide: lots")[0], None)
+        # No digit on a side: no version update.
+        self.assertEqual(facts.title_parts("ci: npins → flake")[0], None)
+        self.assertEqual(facts.title_parts("xkeysnail: 0.4 -> HEAD")[0], None)
 
 
 class UpdateState(unittest.TestCase):
@@ -51,8 +54,15 @@ class UpdateState(unittest.TestCase):
         self.assertEqual(facts.update_state("1.0", "1.1", "1.1"), "superseded")
         self.assertEqual(facts.update_state("1.0", "1.1", "1.2"), "superseded")
         self.assertEqual(facts.update_state("1.0", "1.5", "1.2"), "overtaken")
-        # A snapshot to a release sorts backwards: a scheme change, not done.
-        self.assertEqual(facts.update_state("1.0", "0.9", "1.0"), "backwards")
+        # Backwards by Nix's order: a downgrade, or a snapshot to a release.
+        self.assertEqual(facts.update_state("1.0", "0.9", "1.0"), "downgrade")
+        self.assertEqual(
+            facts.update_state("0.1.0-unstable-2024-09-01", "0.1.0", None),
+            "snapshotToRelease",
+        )
+        # Newer for Nix, a pre-release for libversion.
+        self.assertEqual(facts.update_state("1.1.0", "1.1.0.dev0", None), "preRelease")
+        self.assertEqual(facts.update_state("3.1", "3.1_p1", None), "preRelease")
         self.assertIsNone(facts.update_state("1.0", "1.1", None))
 
 
