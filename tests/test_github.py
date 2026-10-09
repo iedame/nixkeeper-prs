@@ -358,7 +358,7 @@ class IssuesAndMerged(unittest.TestCase):
                 mock.patch("sys.stderr"),
             ):
                 self.assertEqual(
-                    cli.list_issues(d, "t", "now", {}, {}, {}, {}),
+                    cli.list_issues(d, "t", "now", {}, {}, {}, {}, {}),
                     {"count": 1, "at": "then"},
                 )
             self.assertEqual(

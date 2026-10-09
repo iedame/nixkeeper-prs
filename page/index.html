@@ -55,7 +55,7 @@
 </main>
 </section>
 <section id="tab-issues" hidden>
-  <p class="note">Open issues, by title (their text isn't read). A package's issue is linked to the open PRs for that package. A build failure is checked against what Hydra builds now on master (its platforms, when the title names them): one that builds is a candidate to close, unless the title adds a condition (an option, an override, a setup) only a person can check. An update request is checked against the version nixpkgs has now (master's, else the channel's), by Nix's own order.</p>
+  <p class="note">Open issues, by title (their text isn't read). A package's issue is linked to the open PRs for that package. A build failure is checked against what Hydra builds now on master (its platforms, when the title names them): one that builds is a candidate to close, unless the title adds a condition (an option, an override, a setup) only a person can check. An update request is checked against the version nixpkgs has now (master's, else the channel's), by Nix's own order, and against the update bot's queue (what it would update to next, from Repology: now and then another project's version).</p>
   <search><form id="issueFilters">
     <label>Search <input id="iq" type="search" placeholder="title, #number, package"></label>
     <label>Kind <select id="ikind"><option value="">any</option></select></label>
@@ -71,6 +71,7 @@
         <option value="updDone">nixpkgs has it: close candidates</option>
         <option value="updPr">an update PR is open</option>
         <option value="updOpen">still open, no PR</option>
+        <option value="updBot">the bot's queue has it: wait for the bot</option>
         <option value="updPartly">moved on, not to the version asked</option>
       </optgroup>
     </select></label>

@@ -160,6 +160,31 @@ class Analyse(unittest.TestCase):
         self.assertEqual(found[0]["state"], "superseded")
         self.assertEqual(found[0]["update"]["now"], "1.1")
 
+    def test_init_already_in_and_hydra_failures(self):
+        prs = [
+            pr(1, "foo: init at 1.0"),
+            pr(
+                2,
+                "newthing: init at 0.1",
+                files=["pkgs/by-name/ne/newthing/package.nix"],
+            ),
+            pr(3, "bar: fix build", files=["pkgs/by-name/ba/bar/package.nix"]),
+        ]
+        jobs = {
+            "bar": {
+                "x86_64-linux": {"status": "failed", "build": "1", "reason": "cmake"},
+                "aarch64-linux": {"status": "ok", "build": "2"},
+            },
+            "newthing": {"x86_64-linux": {"status": "failed", "build": "3"}},
+        }
+        found, _ = facts.analyse(prs, INDEX, {}, {}, {}, jobs)
+        by_n = {p["n"]: p for p in found}
+        self.assertEqual(by_n[1]["alreadyIn"], {"attr": "foo", "version": "1.0"})
+        self.assertNotIn("alreadyIn", by_n[2])
+        self.assertEqual(by_n[3]["hydraFailing"], {"bar": {"x86_64-linux": "cmake"}})
+        # A by-name directory counts, whatever the title.
+        self.assertEqual(by_n[2]["hydraFailing"], {"newthing": {"x86_64-linux": ""}})
+
 
 if __name__ == "__main__":
     unittest.main()

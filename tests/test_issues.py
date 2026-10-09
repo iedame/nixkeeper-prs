@@ -101,8 +101,10 @@ NAMES = {a.lower(): a for a in INDEX}
 
 
 class UpdateRequests(unittest.TestCase):
-    def check(self, title, master=None, updates=None):
-        return issues.check_update(title, INDEX, NAMES, master or {}, updates or {})
+    def check(self, title, master=None, updates=None, queue=None):
+        return issues.check_update(
+            title, INDEX, NAMES, master or {}, updates or {}, queue
+        )
 
     def test_done(self):
         found = self.check("Update Request: swiftpm 5.8.0 → 6.1.0")
@@ -157,6 +159,22 @@ class UpdateRequests(unittest.TestCase):
             "notVersion",
         )
         self.assertIsNone(self.check("Update request: jaxlib with ROCm support"))
+
+    def test_the_bots_queue_reaches_it(self):
+        queue = {
+            "cassandra": {"candidates": [["4.1.8", "5.0.6"]], "by": "2026-10-20"},
+            "zitadel": {"candidates": [["2.80.0", "3.9.0"]]},
+        }
+        found = self.check("Update Request: cassandra 4.1.8 → v5.0.4", queue=queue)
+        self.assertEqual(found["bot"], {"to": "5.0.6", "by": "2026-10-20"})
+        # Not up to the version asked; and nothing once nixpkgs has it.
+        self.assertNotIn(
+            "bot", self.check("Update Request: zitadel 2.71.7 → 4.0.0", queue=queue)
+        )
+        done = {"swiftpm": {"candidates": [["6.2.4", "6.3.0"]]}}
+        self.assertNotIn(
+            "bot", self.check("Update Request: swiftpm 5.8.0 → 6.1.0", queue=done)
+        )
 
 
 if __name__ == "__main__":

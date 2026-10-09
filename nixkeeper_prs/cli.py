@@ -165,10 +165,11 @@ def open_updates(prs):
     return found
 
 
-def list_issues(directory, tok, now, jobs, index, master, updates):
+def list_issues(directory, tok, now, jobs, index, master, updates, queue):
     """Write issues.json (every open issue; a build-failure one with what
     Hydra says of it, issues.check's "hydra"; an update request with what
-    nixpkgs has, issues.check_update's "update"); on failure keep the last
+    nixpkgs has and whether the bot's queue reaches it, issues.check_update's
+    "update"); on failure keep the last
     one. Returns meta's "issues" ({"count", "at", "buildFailures" and
     "updateRequests": {verdict: count}}: the last listing that worked)."""
     path = os.path.join(directory, "issues.json")
@@ -185,7 +186,9 @@ def list_issues(directory, tok, now, jobs, index, master, updates):
     for issue in found:
         if hydra := issues.check(issue["title"], jobs):
             issue["hydra"] = hydra
-        if update := issues.check_update(issue["title"], index, names, master, updates):
+        if update := issues.check_update(
+            issue["title"], index, names, master, updates, queue
+        ):
             issue["update"] = update
     write_json(path, {"format": FORMAT, "generatedAt": now, "issues": found})
     builds = Counter(i["hydra"]["verdict"] for i in found if i.get("hydra"))
@@ -195,6 +198,9 @@ def list_issues(directory, tok, now, jobs, index, master, updates):
         "at": now,
         "buildFailures": dict(builds.most_common()),
         "updateRequests": dict(requests.most_common()),
+        "updateRequestsTheBotReaches": sum(
+            1 for i in found if (i.get("update") or {}).get("bot")
+        ),
     }
 
 
@@ -272,7 +278,7 @@ def main(argv=None):
         file=sys.stderr,
     )
     issues_meta = list_issues(
-        directory, tok, now, jobs, index, master, open_updates(prs)
+        directory, tok, now, jobs, index, master, open_updates(prs), queue
     )
     merged_meta = list_merged(directory, tok, now)
 
@@ -285,7 +291,7 @@ def main(argv=None):
         int(n): (entry[1], entry[2] if len(entry) >= 3 else {})
         for n, entry in cache.items()
     }
-    prs, groups = facts.analyse(prs, index, master, queue, known)
+    prs, groups = facts.analyse(prs, index, master, queue, known, jobs)
 
     # When the digest is written (now: when the PRs were read, fullSweepAt's).
     written = datetime.now(UTC).isoformat(timespec="seconds")
@@ -300,6 +306,8 @@ def main(argv=None):
         "buckets": dict(counts.most_common()),
         "states": dict(states.most_common()),
         "blocksBot": sum(1 for pr in prs if pr.get("blocksBot")),
+        "alreadyIn": sum(1 for pr in prs if pr.get("alreadyIn")),
+        "hydraFailing": sum(1 for pr in prs if pr.get("hydraFailing")),
         "mergeBot": {
             "eligible": sum(1 for pr in prs if pr.get("mergeBot")),
             "ready": sum(1 for pr in prs if (pr.get("mergeBot") or {}).get("ready")),
