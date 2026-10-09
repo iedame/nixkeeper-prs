@@ -165,7 +165,7 @@ class Sweep(unittest.TestCase):
         previous = [
             self.old(1, "2026-10-08T00:00:00Z", buckets=["update"]),  # unchanged
             self.old(2, "2026-10-08T00:00:00Z"),  # updated since
-            self.old(3, "2026-10-08T00:00:00Z", ci="PENDING"),  # unsettled
+            self.old(3, "2026-10-08T00:00:00Z", ci="PENDING"),  # left to the full sweep
             self.old(4, "2026-10-08T00:00:00Z"),  # closed since
         ]
         listed = {
@@ -174,7 +174,7 @@ class Sweep(unittest.TestCase):
             3: "2026-10-08T00:00:00Z",
             5: "2026-10-09T00:00:00Z",  # new
         }
-        fresh = [self.old(n, listed[n]) for n in (2, 3, 5)]
+        fresh = [self.old(n, listed[n]) for n in (2, 5)]
         with (
             mock.patch.object(github, "open_list", return_value=listed),
             mock.patch.object(github, "details", return_value=fresh) as read,
@@ -183,7 +183,7 @@ class Sweep(unittest.TestCase):
             prs, how, total = cli.sweep(
                 previous, "2026-10-09T06:00:00+00:00", self.NOW, "t"
             )
-        self.assertEqual(sorted(read.call_args.args[0]), [2, 3, 5])
+        self.assertEqual(sorted(read.call_args.args[0]), [2, 5])
         self.assertEqual((how, total), ("changed", 4))
         self.assertEqual([p["n"] for p in prs], [1, 2, 3, 5])
         # The last digest's worked-out facts aren't carried: analyse redoes them.

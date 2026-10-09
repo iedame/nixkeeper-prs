@@ -32,7 +32,12 @@ MAX_FAILURES_IN_A_ROW = 10
 MAX_DIFF_FILES = 50
 MAX_DIFF_LINES = 2000
 # How often the details of every PR are read again: what doesn't move a PR's
-# last update (its checks finishing, master moving under it) is caught up then.
+# last update (its checks finishing, master moving under it, GitHub working
+# out its merge state) is caught up then. Between full sweeps only new and
+# updated PRs are read: most PRs' merge state is UNKNOWN in bulk answers
+# (GitHub works it out lazily: 9,800 of 12,440 on 2026-10-09) and thousands
+# keep a pending check for days, so re-reading the unsettled re-read nearly
+# everything every run.
 FULL_EVERY = timedelta(hours=24)
 # A PR's own fields (github.pr's), kept from one run to the next; the rest is
 # worked out again each run (facts.analyse).
@@ -55,9 +60,6 @@ RAW = (
     "approvedBy",
     "ci",
 )
-# Read again even when not updated: GitHub hadn't worked out its merge state,
-# or its checks were still running.
-UNSETTLED = {"mergeable": {"UNKNOWN"}, "ci": {"PENDING", "EXPECTED"}}
 
 
 def read_json(path, default):
@@ -111,16 +113,12 @@ def read_diffs(prs, cache, started, tok):
     return read, len(wanted) - read
 
 
-def unsettled(pr):
-    return any(pr.get(k) in values for k, values in UNSETTLED.items())
-
-
 def sweep(previous, swept_at, now, tok):
     """Every open PR's details (github.pr's), oldest first, with how they
     were read ("full" or "changed") and how many GitHub says are open:
     a full sweep without a last digest or when its full sweep is
     FULL_EVERY old; else the last digest's PRs still open, the changed ones
-    (updated since, new, unsettled) read again."""
+    (new, or updated since) read again."""
     if (
         not previous
         or not swept_at
@@ -133,7 +131,7 @@ def sweep(previous, swept_at, now, tok):
     changed = [
         n
         for n, updated in listed.items()
-        if n not in before or before[n]["updated"] != updated or unsettled(before[n])
+        if n not in before or before[n]["updated"] != updated
     ]
     print(f"  {len(changed):,} of {len(listed):,} changed since", file=sys.stderr)
     fresh = {pr["n"]: pr for pr in github.details(changed, tok)}

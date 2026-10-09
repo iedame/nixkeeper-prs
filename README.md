@@ -61,9 +61,10 @@ On the `data` branch:
   requests, ~460 points) takes about an hour, as GitHub answers each page
   in seconds: it's done the first time and once a day. Other runs list
   every open PR's number and last update (100 a request, minutes) and read
-  the details of those updated since, new, or unsettled (merge state not
-  worked out yet, checks running) again, 25 a request; the rest come from
-  the last digest. The log says how long GitHub takes a request.
+  the details of those new or updated since again, 25 a request; the
+  rest come from the last digest. What changes without updating a PR (its
+  checks finishing, its merge state: GitHub works it out lazily, so most
+  PRs' `mergeable` is `UNKNOWN`) is caught up by the daily full sweep. The log says how long GitHub takes a request.
 - What nixpkgs has: the nixos-unstable channel's package index (versions,
   maintainers), master's versions from
   [nixkeeper-hydra](https://github.com/iedame/nixkeeper-hydra)'s digest,
