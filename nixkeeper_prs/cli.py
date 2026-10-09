@@ -154,11 +154,23 @@ def sweep(previous, swept_at, now, tok):
     return prs, "changed", len(listed)
 
 
-def list_issues(directory, tok, now, jobs):
-    """Write issues.json (every open issue, a build-failure one with what
-    Hydra says of it: issues.check, its "hydra"); on failure keep the last
-    one. Returns meta's "issues" ({"count", "at", "buildFailures": {verdict:
-    count}}: the last listing that worked)."""
+def open_updates(prs):
+    """{attribute in lower case: [numbers]} of the open update PRs (their
+    titles: "foo: 1.0 -> 1.1")."""
+    found = {}
+    for pr in prs:
+        kind, attr, _, _ = facts.title_parts(pr["title"])
+        if kind == "update":
+            found.setdefault(sources.canonical(attr).lower(), []).append(pr["n"])
+    return found
+
+
+def list_issues(directory, tok, now, jobs, index, master, updates):
+    """Write issues.json (every open issue; a build-failure one with what
+    Hydra says of it, issues.check's "hydra"; an update request with what
+    nixpkgs has, issues.check_update's "update"); on failure keep the last
+    one. Returns meta's "issues" ({"count", "at", "buildFailures" and
+    "updateRequests": {verdict: count}}: the last listing that worked)."""
     path = os.path.join(directory, "issues.json")
     try:
         found = github.open_issues(tok)
@@ -169,15 +181,20 @@ def list_issues(directory, tok, now, jobs):
         )
         last = read_json(path, {})
         return {"count": len(last.get("issues") or []), "at": last.get("generatedAt")}
+    names = {attr.lower(): attr for attr in index}
     for issue in found:
         if hydra := issues.check(issue["title"], jobs):
             issue["hydra"] = hydra
+        if update := issues.check_update(issue["title"], index, names, master, updates):
+            issue["update"] = update
     write_json(path, {"format": FORMAT, "generatedAt": now, "issues": found})
-    verdicts = Counter(i["hydra"]["verdict"] for i in found if i.get("hydra"))
+    builds = Counter(i["hydra"]["verdict"] for i in found if i.get("hydra"))
+    requests = Counter(i["update"]["verdict"] for i in found if i.get("update"))
     return {
         "count": len(found),
         "at": now,
-        "buildFailures": dict(verdicts.most_common()),
+        "buildFailures": dict(builds.most_common()),
+        "updateRequests": dict(requests.most_common()),
     }
 
 
@@ -254,7 +271,9 @@ def main(argv=None):
         "Listing open issues and PRs merged since the channel's commit...",
         file=sys.stderr,
     )
-    issues_meta = list_issues(directory, tok, now, jobs)
+    issues_meta = list_issues(
+        directory, tok, now, jobs, index, master, open_updates(prs)
+    )
     merged_meta = list_merged(directory, tok, now)
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})

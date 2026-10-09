@@ -514,7 +514,26 @@ function hydraCell(i) {
       return `<span class="buckets">${esc({ waiting: 'dependency failed or not finished', variant: "a variant Hydra doesn't build", noJob: 'no Hydra job by that name', platformNotBuilt: 'platform not built by Hydra' }[h.verdict] || h.verdict)}</span>`;
   }
 }
+// What nixpkgs has of an update request (the digest's issues.py).
+function updateCell(i) {
+  const u = i.update;
+  const prs = (u.prs || []).map((n) => `<a href="${PR_URL}${n}">#${n}</a>`).join(' ');
+  const has = u.now ? ` <span class="buckets">has ${esc(u.now)}</span>` : '';
+  const said = {
+    done: '<span class="fact good" title="nixpkgs has the version asked, or newer: a candidate to close">done</span>',
+    partly:
+      '<span class="fact warn" title="nixpkgs moved on, but not to the version asked">partly</span>',
+    open: '<span class="fact">open</span>',
+    notFound: '<span class="buckets">no package by that name</span>',
+    notVersion: '<span class="buckets">not a version asked</span>',
+  }[u.verdict];
+  return `${said || esc(u.verdict)}${has}${prs ? ` · PR ${prs}` : ''}`;
+}
 const HYDRA_FILTERS = {
+  updDone: (_, u) => u?.verdict === 'done',
+  updPr: (_, u) => u?.verdict !== 'done' && (u?.prs || []).length > 0,
+  updOpen: (_, u) => u?.verdict === 'open' && !(u.prs || []).length,
+  updPartly: (_, u) => u?.verdict === 'partly',
   close: (h) => h?.verdict === 'builds' && !h.condition,
   condition: (h) => h?.verdict === 'builds' && h.condition,
   failing: (h) => h?.verdict === 'failing',
@@ -532,7 +551,7 @@ function issueRow(i) {
     <td class="title">${esc(i.title)}</td>
     <td>${esc(label)}</td>
     <td class="mono">${esc(i.pkg || '')}</td>
-    <td>${hydraCell(i)}</td>
+    <td>${i.update ? updateCell(i) : hydraCell(i)}</td>
     <td>${prsFor.map((n) => `<a href="${PR_URL}${n}">#${n}</a>`).join(' ')}</td>
   </tr>`;
 }
@@ -544,7 +563,7 @@ function renderIssues() {
   const list = issues.filter(
     (i) =>
       (!kind || i.kind === kind) &&
-      (!hydra || HYDRA_FILTERS[hydra](i.hydra)) &&
+      (!hydra || HYDRA_FILTERS[hydra](i.hydra, i.update)) &&
       (!withPr || (i.pkg && openFor.has(i.pkg.toLowerCase()))) &&
       (!q || `#${i.n} ${i.title} ${i.pkg || ''}`.toLowerCase().includes(q)),
   );
