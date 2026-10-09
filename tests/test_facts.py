@@ -42,6 +42,22 @@ class Titles(unittest.TestCase):
         )
         self.assertEqual(facts.title_parts("foo: init at 0.1")[:2], ("init", "foo"))
         self.assertEqual(facts.title_parts("foo: drop")[:2], ("drop", "foo"))
+        for title in (
+            "git-instafix: remove package",
+            "sqlite-interactive: drop in favor of enabling readline by default",
+            "pokemmo-installer: drop, pokemmo: init at 32920",
+            "fmt_9: remove version",
+            "ldash: drop due to lack of maintenance",
+            "foo: Drop (unmaintained)",
+        ):
+            self.assertEqual(facts.title_parts(title)[0], "drop", title)
+        # Something removed from the package, not the package.
+        for title in (
+            "signal-cli: drop unused libmatthew_java and dbus_java",
+            "python3Packages.axisregistry: remove meta.changelog",
+            "mpv: drop dev output from mpv-unwrapped",
+        ):
+            self.assertIsNone(facts.title_parts(title)[0], title)
         self.assertEqual(facts.title_parts("treewide: lots")[0], None)
         # No digit on a side: no version update.
         self.assertEqual(facts.title_parts("ci: npins → flake")[0], None)

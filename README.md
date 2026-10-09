@@ -21,7 +21,9 @@ On the `data` branch:
   review decision), `approvedBy`, `ci` (its checks' combined state); and
   what the digest makes of it:
   - `buckets`: `update`, `init`, `drop` (by its title, nixpkgs'
-    conventions), `by-name` (touches only `pkgs/by-name`), `tiny` (at most
+    conventions; `drop` only when it removes the package itself: "foo:
+    drop", "remove package", "drop in favor of ...", not "drop unused
+    bar"), `by-name` (touches only `pkgs/by-name`), `tiny` (at most
     10 lines in 2 files), `bot` (r-ryantm's), `ci-bot` (nixpkgs-ci's), `python`, `haskell`, `node`,
     `nixos`, `lib`, `ci`, `docs` (by path), `treewide` (50 files or more)
   - `packages` (the `pkgs/by-name` ones it touches) and their

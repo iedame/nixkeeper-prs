@@ -21,10 +21,21 @@ CI_BOT = "nixpkgs-ci"
 # knows who's a committer: the digest doesn't).
 MERGE_BOT_LABEL = "2.status: merge-bot eligible"
 # nixpkgs' title conventions (CONTRIBUTING.md): "attr: 1.0 -> 1.1",
-# "attr: init at 1.0", "attr: drop", "attr: remove".
+# "attr: init at 1.0", "attr: drop", "attr: remove" (DROP: the package
+# itself).
 UPDATE = re.compile(r"^([\w.+-]+): (\S+) (?:->|→) (\S+)\s*$")
 INIT = re.compile(r"^([\w.+-]+): init at \S+", re.IGNORECASE)
-DROP = re.compile(r"^([\w.+-]+): (?:drop|remove)\b", re.IGNORECASE)
+# A removal of the package itself: the title says nothing more, or says so
+# ("foo: drop", "foo: remove package", "foo: drop in favor of bar", "foo:
+# drop, bar: init at 1.0", "fmt_9: remove version", "foo: drop (unmaintained)",
+# "foo: drop due to ..."). Not "foo: drop unused bar" nor "foo: remove
+# meta.changelog", which remove something from it: 85 of 125 titles with
+# "drop" or "remove" on 2026-10-09 (nixkeeper's prs_digest.REMOVAL, the same).
+DROP = re.compile(
+    r"^([\w.+-]+): (?:drop|remove)(?:\s*$|\s*[,;(:]|\s+(?:the\s+)?package\b"
+    r"|\s+in\s+favou?r\b|\s+(?:as|since|because|due)\b|\s+version\b)",
+    re.IGNORECASE,
+)
 # A version has a digit somewhere: "ci: npins → flake" is no update.
 DIGIT = re.compile(r"\d")
 # A snapshot's version (nixpkgs' "0.1.0-unstable-2024-09-01", or a date).
