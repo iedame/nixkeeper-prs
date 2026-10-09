@@ -139,6 +139,10 @@ tr.draft {
 .fact.bad {
   color: var(--bad);
 }
+.alt {
+  font-size: 12px;
+  color: var(--faint);
+}
 .buckets {
   font-size: 12px;
   color: var(--faint);

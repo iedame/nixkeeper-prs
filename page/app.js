@@ -4,6 +4,10 @@
 
 const DATA = 'https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/prs.json';
 const PR_URL = 'https://github.com/NixOS/nixpkgs/pull/';
+// The same PR on ghdiff.com, a fast review site (github.com's path on its
+// host; it asks for your own GitHub token, kept in your browser). Not ours:
+// a link, not a dependency.
+const GHDIFF_URL = 'https://ghdiff.com/NixOS/nixpkgs/pull/';
 const STEP = 200;
 
 // What to act on, each a test on a PR (groups: the digest's duplicates).
@@ -138,7 +142,7 @@ const CI = { SUCCESS: '✓', FAILURE: '✗', ERROR: '✗', PENDING: '…', EXPEC
 
 function row(p) {
   return `<tr${p.draft ? ' class="draft"' : ''}>
-    <td><a href="${PR_URL}${p.n}">#${p.n}</a></td>
+    <td class="num"><a href="${PR_URL}${p.n}">#${p.n}</a><br><a class="alt" href="${GHDIFF_URL}${p.n}" title="Review it on ghdiff.com">ghdiff</a></td>
     <td class="title">${esc(p.title)}${p.draft ? ' <span class="fact">draft</span>' : ''}</td>
     <td>${esc(p.author)}</td>
     <td class="num" title="${p.fileCount} files">+${p.additions} −${p.deletions}</td>
