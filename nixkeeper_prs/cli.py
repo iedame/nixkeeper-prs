@@ -165,7 +165,7 @@ def open_updates(prs):
     return found
 
 
-def list_issues(directory, tok, now, jobs, index, master, updates, queue):
+def list_issues(directory, tok, now, jobs, index, master, updates, queue, aliases=None):
     """Write issues.json (every open issue; a build-failure one with what
     Hydra says of it, issues.check's "hydra"; an update request with what
     nixpkgs has and whether the bot's queue reaches it, issues.check_update's
@@ -183,8 +183,9 @@ def list_issues(directory, tok, now, jobs, index, master, updates, queue):
         last = read_json(path, {})
         return {"count": len(last.get("issues") or []), "at": last.get("generatedAt")}
     names = {attr.lower(): attr for attr in index}
+    by_name = {attr.lower(): entry for attr, entry in index.items()}
     for issue in found:
-        if hydra := issues.check(issue["title"], jobs):
+        if hydra := issues.check(issue["title"], jobs, by_name, aliases):
             issue["hydra"] = hydra
         if update := issues.check_update(
             issue["title"], index, names, master, updates, queue
@@ -273,12 +274,17 @@ def main(argv=None):
     master = sources.master(index, hydra_rows)
     jobs = sources.jobs(hydra_rows)
     queue = sources.queue()
+    try:
+        aliases = sources.aliases()
+    except (OSError, ValueError) as e:
+        print(f"::warning::nixpkgs' aliases.nix couldn't be read: {e}", file=sys.stderr)
+        aliases = None
     print(
         "Listing open issues and PRs merged since the channel's commit...",
         file=sys.stderr,
     )
     issues_meta = list_issues(
-        directory, tok, now, jobs, index, master, open_updates(prs), queue
+        directory, tok, now, jobs, index, master, open_updates(prs), queue, aliases
     )
     merged_meta = list_merged(directory, tok, now)
 

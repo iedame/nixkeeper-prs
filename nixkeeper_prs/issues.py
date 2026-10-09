@@ -3,7 +3,11 @@ digest of master): does the package an issue says fails build there, on
 the platforms it names? An issue whose package builds on every such job is
 a candidate to close, unless its title adds a condition (an option, an
 override, a setup Hydra doesn't build: "with ROCm", "in a non-default
-store"), which only a person can check.
+store"), which only a person can check. With no job by the title's name,
+the package is looked for under the names it may have now (an older
+Python's set, a version in the name, a rename), and else said why:
+removed from nixpkgs (nixpkgs' aliases.nix, with its reason), or one
+Hydra doesn't build (unfree, marked broken, no Hydra platforms).
 
 Read from titles ("Build failure: foo on Darwin", nixpkgs' template), so a
 guess: each issue says what it checked."""
@@ -38,6 +42,12 @@ VARIANT = re.compile(
 FAILING = {"failed"}
 WAITING = {"dependency", "unfinished", "queued"}
 PYTHON_ALIAS = re.compile(r"^python3Packages\.", re.IGNORECASE)
+# An older Python's set, gone from nixpkgs (python311Packages.foo): the
+# package is checked in the current one.
+OLD_PYTHON = re.compile(r"^python3\d+Packages\.", re.IGNORECASE)
+CURRENT_PYTHON = "python313packages."
+# A package named with its version ("borgbackup-1.2.6"): checked without it.
+WITH_VERSION = re.compile(r"^(.+?)-(\d[\w.]*)$")
 
 
 def parse(title):
@@ -70,14 +80,63 @@ def jobs_for(package, jobs):
     return jobs.get(key) or jobs.get(PYTHON_ALIAS.sub("python313packages.", key)) or {}
 
 
-def check(title, jobs, python_set="python313packages."):
+def alternatives(package, aliases):
+    """Other names a title's package may have now, in order: in the current
+    Python set (an older one's is gone), without a version in its name, the
+    attribute a rename points to."""
+    found = []
+    if OLD_PYTHON.match(package) and not package.lower().startswith(CURRENT_PYTHON):
+        found.append(CURRENT_PYTHON + package.split(".", 1)[1])
+    if m := WITH_VERSION.match(package):
+        found.append(m.group(1))
+    if new := (aliases or {}).get("renamed", {}).get(package.lower()):
+        found.append(new)
+    return found
+
+
+def no_job(found, package, index, aliases):
+    """Why there's no Hydra job for package: "removed" from nixpkgs (with
+    nixpkgs' "reason"), "renamed" ("to": its new attribute, which has no job
+    either), or one Hydra doesn't build: "unfree", "markedBroken",
+    "notForHydra" (meta.hydraPlatforms empty); else "noJob". index:
+    {attribute in lower case: sources.channel's entry}."""
+    key = package.lower()
+    removed = (aliases or {}).get("removed", {})
+    renamed = (aliases or {}).get("renamed", {})
+    if key in removed:
+        found["verdict"] = "removed"
+        if removed[key]:
+            found["reason"] = removed[key]
+        return found
+    names = [key, *(a.lower() for a in alternatives(package, aliases))]
+    meta = next(((index or {})[n] for n in names if n in (index or {})), None)
+    if meta and meta.get("unfree"):
+        found["verdict"] = "unfree"
+    elif meta and meta.get("broken"):
+        found["verdict"] = "markedBroken"
+    elif meta and meta.get("notForHydra"):
+        found["verdict"] = "notForHydra"
+    elif key in renamed:
+        found["verdict"] = "renamed"
+        found["to"] = renamed[key]
+    else:
+        found["verdict"] = "noJob"
+    return found
+
+
+def check(title, jobs, index=None, aliases=None):
     """What Hydra says of a build-failure issue: None for other titles, else
-    {"package", "verdict", "systems"?, "condition"?, "reasons"?}. verdict:
-    "builds" (every job it concerns is ok), "failing" (one failed: its
-    reasons by system), "waiting" (a dependency failed, or not finished),
-    "variant" (a build Hydra doesn't make: musl, static, cross...), "noJob"
-    (no Hydra job by that name), "platformNotBuilt" (only platforms Hydra
-    doesn't build, x86_64-darwin)."""
+    {"package", "verdict", "systems"?, "condition"?, "reasons"?,
+    "checkedAs"?, "reason"?, "to"?}. verdict: "builds" (every job it
+    concerns is ok), "failing" (one failed: its reasons by system),
+    "waiting" (a dependency failed, or not finished), "variant" (a build
+    Hydra doesn't make: musl, static, cross...), "platformNotBuilt" (only
+    platforms Hydra doesn't build, x86_64-darwin); and with no job by the
+    title's name (no_job's): "removed", "renamed", "unfree",
+    "markedBroken", "notForHydra", "noJob". checkedAs: the name checked
+    instead (alternatives': python313Packages.foo for python311Packages.foo,
+    borgbackup for borgbackup-1.2.6, a rename's new name). index: {attribute
+    in lower case: sources.channel's entry}; aliases: sources.aliases'."""
     package, platforms, condition = parse(title)
     if not package:
         return None
@@ -88,9 +147,13 @@ def check(title, jobs, python_set="python313packages."):
         found["verdict"] = "variant"
         return found
     mine = jobs_for(package, jobs)
+    if not mine and package.lower() not in (aliases or {}).get("removed", {}):
+        for other in alternatives(package, aliases):
+            if mine := jobs_for(other, jobs):
+                found["checkedAs"] = other
+                break
     if not mine:
-        found["verdict"] = "noJob"
-        return found
+        return no_job(found, package, index, aliases)
     wanted = [
         system
         for system in sorted(mine)

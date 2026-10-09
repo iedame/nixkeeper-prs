@@ -522,20 +522,36 @@ const HYDRA_JOB = 'https://hydra.nixos.org/job/nixpkgs/unstable/';
 function hydraCell(i) {
   const h = i.hydra;
   if (!h) return '';
+  // Checked under the name it has now (an older Python's set, a version in
+  // the title, a rename): that one's jobs.
+  const name = h.checkedAs || h.package;
   const job = (system) =>
-    `<a href="${HYDRA_JOB}${encodeURIComponent(`${h.package}.${system}`)}">${esc(system)}</a>`;
+    `<a href="${HYDRA_JOB}${encodeURIComponent(`${name}.${system}`)}">${esc(system)}</a>`;
+  const as = h.checkedAs
+    ? ` <span class="buckets" title="No Hydra job by the title's name: checked as ${esc(h.checkedAs)}">as ${esc(h.checkedAs)}</span>`
+    : '';
   switch (h.verdict) {
     case 'builds':
-      return `<span class="fact ${h.condition ? 'warn' : 'good'}" title="${h.condition ? 'Builds on Hydra, but the title adds a condition to check' : 'Every Hydra job it concerns builds: a candidate to close'}">builds</span> ${(h.systems || []).map(job).join(' ')}`;
+      return `<span class="fact ${h.condition ? 'warn' : 'good'}" title="${h.condition ? 'Builds on Hydra, but the title adds a condition to check' : 'Every Hydra job it concerns builds: a candidate to close'}">builds</span>${as} ${(h.systems || []).map(job).join(' ')}`;
     case 'failing':
-      return `<span class="fact bad">failing</span> ${Object.entries(h.reasons || {})
+      return `<span class="fact bad">failing</span>${as} ${Object.entries(h.reasons || {})
         .map(
           ([system, reason]) =>
             `${job(system)}${reason ? ` <span class="buckets">${esc(reason)}</span>` : ''}`,
         )
         .join(' ')}`;
+    case 'removed':
+      return `<span class="fact good" title="Removed from nixpkgs (pkgs/top-level/aliases.nix): a candidate to close">removed from nixpkgs</span>${h.reason ? ` <span class="buckets">${esc(h.reason)}</span>` : ''}`;
+    case 'renamed':
+      return `<span class="fact warn" title="Renamed in nixpkgs (pkgs/top-level/aliases.nix), and Hydra has no job by the new name either">renamed to ${esc(h.to)}</span>`;
+    case 'unfree':
+      return '<span class="buckets" title="Hydra doesn\'t build unfree packages: whether it builds only a person can tell">unfree: Hydra doesn\'t build it</span>';
+    case 'markedBroken':
+      return '<span class="fact warn" title="nixpkgs marks it broken (meta.broken), so Hydra doesn\'t build it: maybe for this very failure">marked broken in nixpkgs</span>';
+    case 'notForHydra':
+      return '<span class="buckets" title="nixpkgs gives it no Hydra platforms (meta.hydraPlatforms = [])">not built by Hydra</span>';
     default:
-      return `<span class="buckets">${esc({ waiting: 'dependency failed or not finished', variant: "a variant Hydra doesn't build", noJob: 'no Hydra job by that name', platformNotBuilt: 'platform not built by Hydra' }[h.verdict] || h.verdict)}</span>`;
+      return `<span class="buckets">${esc({ waiting: 'dependency failed or not finished', variant: "a variant Hydra doesn't build", noJob: 'no Hydra job by that name', platformNotBuilt: 'platform not built by Hydra' }[h.verdict] || h.verdict)}</span>${as}`;
   }
 }
 // What nixpkgs has of an update request (the digest's issues.py).
@@ -565,7 +581,11 @@ const HYDRA_FILTERS = {
   close: (h) => h?.verdict === 'builds' && !h.condition,
   condition: (h) => h?.verdict === 'builds' && h.condition,
   failing: (h) => h?.verdict === 'failing',
-  other: (h) => h && !['builds', 'failing'].includes(h.verdict),
+  removed: (h) => h?.verdict === 'removed',
+  notBuilt: (h) => ['unfree', 'markedBroken', 'notForHydra'].includes(h?.verdict),
+  other: (h) =>
+    h &&
+    !['builds', 'failing', 'removed', 'unfree', 'markedBroken', 'notForHydra'].includes(h.verdict),
 };
 
 let issues = [];
