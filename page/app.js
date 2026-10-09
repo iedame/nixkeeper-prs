@@ -145,7 +145,7 @@ function row(p) {
     <td class="num"><a href="${PR_URL}${p.n}">#${p.n}</a><br><a class="alt" href="${GHDIFF_URL}${p.n}" title="Review it on ghdiff.com">ghdiff</a></td>
     <td class="title">${esc(p.title)}${p.draft ? ' <span class="fact">draft</span>' : ''}</td>
     <td>${esc(p.author)}</td>
-    <td class="num" title="${p.fileCount} files">+${p.additions} −${p.deletions}</td>
+    <td class="num" title="${p.changedFiles} files">+${p.additions} −${p.deletions}</td>
     <td class="ci ${(p.ci || '').toLowerCase()}" title="${p.ci || 'no checks'}">${CI[p.ci] || '–'}</td>
     <td>${facts(p)}</td>
     <td class="num" title="${esc(p.updated)}">${ago(p.updated)}</td>

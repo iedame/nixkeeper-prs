@@ -7,15 +7,19 @@ digest of nixpkgs' open PRs to DATA_DIR (default data/):
                  at: read again only when the PR changes
     meta.json    when, how many, and how many of each kind
 
-Diffs are read from github.com one a second, at most MAX_DIFFS and
-MAX_MINUTES a run (the first runs read the backlog), small PRs only."""
+The PRs' details: a full sweep the first time and every FULL_EVERY (about
+an hour: GitHub takes seconds a page), else the last digest's, with the
+details of those changed since read again (a light list of every open PR,
+minutes). Diffs are read from github.com one a second, at most MAX_DIFFS
+and MAX_MINUTES after the PRs are known (the first runs read the backlog),
+small PRs only."""
 
 import json
 import os
 import sys
 import time
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from . import facts, fetch, github, sources
 
@@ -27,8 +31,33 @@ MAX_FAILURES_IN_A_ROW = 10
 # which are never copies of another's.
 MAX_DIFF_FILES = 50
 MAX_DIFF_LINES = 2000
-# A PR's files kept in prs.json (the page shows them); the count is whole.
-KEEP_FILES = 20
+# How often the details of every PR are read again: what doesn't move a PR's
+# last update (its checks finishing, master moving under it) is caught up then.
+FULL_EVERY = timedelta(hours=24)
+# A PR's own fields (github.pr's), kept from one run to the next; the rest is
+# worked out again each run (facts.analyse).
+RAW = (
+    "n",
+    "title",
+    "author",
+    "draft",
+    "created",
+    "updated",
+    "base",
+    "head",
+    "additions",
+    "deletions",
+    "changedFiles",
+    "files",
+    "labels",
+    "mergeable",
+    "review",
+    "approvedBy",
+    "ci",
+)
+# Read again even when not updated: GitHub hadn't worked out its merge state,
+# or its checks were still running.
+UNSETTLED = {"mergeable": {"UNKNOWN"}, "ci": {"PENDING", "EXPECTED"}}
 
 
 def read_json(path, default):
@@ -78,6 +107,37 @@ def read_diffs(prs, cache, started):
     return read, len(wanted) - read
 
 
+def unsettled(pr):
+    return any(pr.get(k) in values for k, values in UNSETTLED.items())
+
+
+def sweep(previous, swept_at, now, tok):
+    """Every open PR's details (github.pr's), oldest first, with how they
+    were read ("full" or "changed") and how many GitHub says are open:
+    a full sweep without a last digest or when its full sweep is
+    FULL_EVERY old; else the last digest's PRs still open, the changed ones
+    (updated since, new, unsettled) read again."""
+    if (
+        not previous
+        or not swept_at
+        or now - datetime.fromisoformat(swept_at) >= FULL_EVERY
+    ):
+        prs, total = github.open_prs(tok)
+        return prs, "full", total
+    listed = github.open_list(tok)
+    before = {pr["n"]: {k: pr[k] for k in RAW if k in pr} for pr in previous}
+    changed = [
+        n
+        for n, updated in listed.items()
+        if n not in before or before[n]["updated"] != updated or unsettled(before[n])
+    ]
+    print(f"  {len(changed):,} of {len(listed):,} changed since", file=sys.stderr)
+    fresh = {pr["n"]: pr for pr in github.details(changed, tok)}
+    prs = [fresh.get(n) or before[n] for n in listed if n in fresh or n in before]
+    prs.sort(key=lambda pr: pr["created"])
+    return prs, "changed", len(listed)
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     directory = argv[0] if argv else "data"
@@ -85,9 +145,21 @@ def main(argv=None):
     started = time.monotonic()
     now = datetime.now(UTC).isoformat(timespec="seconds")
 
-    print("Listing nixpkgs' open PRs...", file=sys.stderr)
-    prs, total = github.open_prs(fetch.token())
-    print(f"  {len(prs):,} PRs (GitHub says {total:,} open)", file=sys.stderr)
+    last = read_json(os.path.join(directory, "prs.json"), {})
+    last_meta = read_json(os.path.join(directory, "meta.json"), {})
+    print("Reading nixpkgs' open PRs...", file=sys.stderr)
+    prs, how, total = sweep(
+        last.get("prs"),
+        last_meta.get("fullSweepAt"),
+        datetime.fromisoformat(now),
+        fetch.token(),
+    )
+    swept_at = now if how == "full" else last_meta.get("fullSweepAt")
+    print(
+        f"  {len(prs):,} PRs ({how}; GitHub says {total:,} open), in "
+        f"{(time.monotonic() - started) / 60:.1f} min",
+        file=sys.stderr,
+    )
     print(
         "Reading the channel's index, master's versions, the bot's queue...",
         file=sys.stderr,
@@ -97,18 +169,18 @@ def main(argv=None):
     queue = sources.queue()
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})
-    read, pending = read_diffs(prs, cache, started)
+    # The diffs' time starts now, whatever the PRs took.
+    read, pending = read_diffs(prs, cache, time.monotonic())
     hashes = {int(n): h for n, (head, h) in cache.items()}
     prs, groups = facts.analyse(prs, index, master, queue, hashes)
-    for pr in prs:
-        pr["fileCount"] = len(pr["files"])
-        pr["files"] = pr["files"][:KEEP_FILES]
 
     counts = Counter(b for pr in prs for b in pr["buckets"])
     states = Counter(pr["state"] for pr in prs if pr.get("state"))
     meta = {
         "format": FORMAT,
         "generatedAt": now,
+        "fullSweepAt": swept_at,
+        "sweep": how,
         "prs": len(prs),
         "buckets": dict(counts.most_common()),
         "states": dict(states.most_common()),

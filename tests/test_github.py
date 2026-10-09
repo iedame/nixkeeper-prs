@@ -144,3 +144,62 @@ class Sources(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Sweep(unittest.TestCase):
+    NOW = cli.datetime.fromisoformat("2026-10-09T12:00:00+00:00")
+
+    def old(self, n, updated, **more):
+        return {**github.pr({**NODE, "number": n, "updatedAt": updated}), **more}
+
+    def test_full_without_a_last_digest_or_when_a_day_old(self):
+        with mock.patch.object(github, "open_prs", return_value=([], 0)) as full:
+            self.assertEqual(cli.sweep(None, None, self.NOW, "t")[1], "full")
+            day_old = "2026-10-08T11:00:00+00:00"
+            self.assertEqual(
+                cli.sweep([self.old(1, "u")], day_old, self.NOW, "t")[1], "full"
+            )
+        self.assertEqual(full.call_count, 2)
+
+    def test_only_the_changed_read_again(self):
+        previous = [
+            self.old(1, "2026-10-08T00:00:00Z", buckets=["update"]),  # unchanged
+            self.old(2, "2026-10-08T00:00:00Z"),  # updated since
+            self.old(3, "2026-10-08T00:00:00Z", ci="PENDING"),  # unsettled
+            self.old(4, "2026-10-08T00:00:00Z"),  # closed since
+        ]
+        listed = {
+            1: "2026-10-08T00:00:00Z",
+            2: "2026-10-09T00:00:00Z",
+            3: "2026-10-08T00:00:00Z",
+            5: "2026-10-09T00:00:00Z",  # new
+        }
+        fresh = [self.old(n, listed[n]) for n in (2, 3, 5)]
+        with (
+            mock.patch.object(github, "open_list", return_value=listed),
+            mock.patch.object(github, "details", return_value=fresh) as read,
+            mock.patch("sys.stderr"),
+        ):
+            prs, how, total = cli.sweep(
+                previous, "2026-10-09T06:00:00+00:00", self.NOW, "t"
+            )
+        self.assertEqual(sorted(read.call_args.args[0]), [2, 3, 5])
+        self.assertEqual((how, total), ("changed", 4))
+        self.assertEqual([p["n"] for p in prs], [1, 2, 3, 5])
+        # The last digest's worked-out facts aren't carried: analyse redoes them.
+        self.assertNotIn("buckets", prs[0])
+
+    def test_details_by_number(self):
+        answer = {
+            "repository": {
+                "p7": {**NODE, "state": "OPEN"},
+                "p8": {**NODE, "number": 8, "state": "CLOSED"},
+                "p9": None,
+            }
+        }
+        with mock.patch.object(fetch, "graphql", return_value=answer) as asked:
+            found = github.details([9, 7, 8], "t")
+        self.assertEqual([p["n"] for p in found], [7])
+        query = asked.call_args.args[0]
+        self.assertIn("p7: pullRequest(number: 7)", query)
+        self.assertIn("p9: pullRequest(number: 9)", query)

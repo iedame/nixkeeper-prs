@@ -16,8 +16,8 @@ On the `data` branch:
 
 - [`data/prs.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/prs.json):
   every open PR (`prs`): its number, title, author, draft, dates, base
-  branch, head commit, lines added and removed, files (the first 20, and
-  `fileCount`), labels, `mergeable` (`CONFLICTING`...), `review` (GitHub's
+  branch, head commit, lines added and removed, `changedFiles` and
+  `files` (the first 100), labels, `mergeable` (`CONFLICTING`...), `review` (GitHub's
   review decision), `approvedBy`, `ci` (its checks' combined state); and
   what the digest makes of it:
   - `buckets`: `update`, `init`, `drop` (by its title, nixpkgs'
@@ -54,20 +54,26 @@ On the `data` branch:
 
 ## How it's made
 
-- Every open PR's details through GitHub's GraphQL API (25 a request,
-  oldest first, ~500 requests), with the `NIXKEEPER_PRS_TOKEN` secret: a
-  fine-grained token with read-only access to public repositories (5,000
-  points an hour). Without it, the workflow's own token (1,000 an hour,
-  about one full sweep).
+- Every open PR's details through GitHub's GraphQL API, with the
+  `NIXKEEPER_PRS_TOKEN` secret: a fine-grained token with read-only access
+  to public repositories (5,000 points an hour; without it, the
+  workflow's own token, 1,000). A full sweep (25 PRs a request, ~500
+  requests, ~460 points) takes about an hour, as GitHub answers each page
+  in seconds: it's done the first time and once a day. Other runs list
+  every open PR's number and last update (100 a request, minutes) and read
+  the details of those updated since, new, or unsettled (merge state not
+  worked out yet, checks running) again, 25 a request; the rest come from
+  the last digest. The log says how long GitHub takes a request.
 - What nixpkgs has: the nixos-unstable channel's package index (versions,
   maintainers), master's versions from
   [nixkeeper-hydra](https://github.com/iedame/nixkeeper-hydra)'s digest,
   the update bot's queue from
   [nixkeeper-updates](https://github.com/iedame/nixkeeper-updates)'.
   Versions are ordered as nixkeeper orders them (its code, a flake input).
-- Diffs from github.com (`pull/N.diff`), one a second, at most 1,500 and 40
-  minutes a run, the most recently updated first, small PRs only (at most
-  50 files and 2,000 lines): the first runs read the backlog.
+- Diffs from github.com (`pull/N.diff`), one a second, at most 1,500 and
+  40 minutes a run, counted from when the PRs are known; the most recently
+  updated first, small PRs only (at most 50 files and 2,000 lines): the
+  first runs read the backlog.
 
 Every request is one at a time, at most one a second, with a User-Agent
 naming this repository.
