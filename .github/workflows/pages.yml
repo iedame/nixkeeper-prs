@@ -1,0 +1,43 @@
+name: "Pages: the proof-of-concept page"
+
+# Publishes page/ to this repository's GitHub Pages
+# (https://iedame.github.io/nixkeeper-prs/): a plain page reading the
+# digest from the data branch. Not linked from nixkeeper.com while it's a
+# proof of concept.
+
+on:
+  push:
+    branches: [main]
+    paths: ["page/**", ".github/workflows/pages.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write     # deploy to Pages
+      id-token: write  # prove to Pages that this run is this repository's
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Upload the page
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: page
+
+      - name: Deploy it
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

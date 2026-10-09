@@ -1,0 +1,130 @@
+"""`python3 -m nixkeeper_prs [DATA_DIR]` (or `nix run . -- data`): write the
+digest of nixpkgs' open PRs to DATA_DIR (default data/):
+
+    prs.json     every open PR with what it is and where it stands
+                 (facts.analyse), and the groups of duplicates
+    diffs.json   each PR's diff fingerprint, by the head commit it was read
+                 at: read again only when the PR changes
+    meta.json    when, how many, and how many of each kind
+
+Diffs are read from github.com one a second, at most MAX_DIFFS and
+MAX_MINUTES a run (the first runs read the backlog), small PRs only."""
+
+import json
+import os
+import sys
+import time
+from collections import Counter
+from datetime import UTC, datetime
+
+from . import facts, fetch, github, sources
+
+FORMAT = 1
+MAX_DIFFS = 1500
+MAX_MINUTES = 40
+MAX_FAILURES_IN_A_ROW = 10
+# Diffs worth fingerprinting: not the huge ones (lock files, treewide edits),
+# which are never copies of another's.
+MAX_DIFF_FILES = 50
+MAX_DIFF_LINES = 2000
+# A PR's files kept in prs.json (the page shows them); the count is whole.
+KEEP_FILES = 20
+
+
+def read_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return default
+
+
+def write_json(path, data, indent=None):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=indent, sort_keys=True, separators=None)
+        f.write("\n")
+
+
+def read_diffs(prs, cache, started):
+    """Fingerprint the diffs of the PRs not read at their head commit yet
+    (cache: {number: [head, fingerprint]}, updated in place; PRs no longer
+    open dropped), the newest first, within MAX_DIFFS and MAX_MINUTES.
+    Returns how many were read and are still to read."""
+    open_now = {str(pr["n"]) for pr in prs}
+    for n in set(cache) - open_now:
+        del cache[n]
+    wanted = [
+        pr
+        for pr in sorted(prs, key=lambda p: p["updated"], reverse=True)
+        if pr["changedFiles"] <= MAX_DIFF_FILES
+        and pr["additions"] + pr["deletions"] <= MAX_DIFF_LINES
+        and (cache.get(str(pr["n"])) or [None])[0] != pr["head"]
+    ]
+    read = in_a_row = 0
+    for pr in wanted[:MAX_DIFFS]:
+        if time.monotonic() - started > MAX_MINUTES * 60:
+            break
+        if in_a_row >= MAX_FAILURES_IN_A_ROW:
+            print("::warning::github.com stopped answering for diffs.", file=sys.stderr)
+            break
+        try:
+            cache[str(pr["n"])] = [pr["head"], github.diff_hash(github.diff(pr["n"]))]
+        except OSError as e:
+            print(f"  #{pr['n']}: {e}", file=sys.stderr)
+            in_a_row += 1
+            continue
+        in_a_row = 0
+        read += 1
+    return read, len(wanted) - read
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    directory = argv[0] if argv else "data"
+    os.makedirs(directory, exist_ok=True)
+    started = time.monotonic()
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+
+    print("Listing nixpkgs' open PRs...", file=sys.stderr)
+    prs, total = github.open_prs(fetch.token())
+    print(f"  {len(prs):,} PRs (GitHub says {total:,} open)", file=sys.stderr)
+    print(
+        "Reading the channel's index, master's versions, the bot's queue...",
+        file=sys.stderr,
+    )
+    index = sources.channel()
+    master = sources.master(index)
+    queue = sources.queue()
+
+    cache = read_json(os.path.join(directory, "diffs.json"), {})
+    read, pending = read_diffs(prs, cache, started)
+    hashes = {int(n): h for n, (head, h) in cache.items()}
+    prs, groups = facts.analyse(prs, index, master, queue, hashes)
+    for pr in prs:
+        pr["fileCount"] = len(pr["files"])
+        pr["files"] = pr["files"][:KEEP_FILES]
+
+    counts = Counter(b for pr in prs for b in pr["buckets"])
+    states = Counter(pr["state"] for pr in prs if pr.get("state"))
+    meta = {
+        "format": FORMAT,
+        "generatedAt": now,
+        "prs": len(prs),
+        "buckets": dict(counts.most_common()),
+        "states": dict(states.most_common()),
+        "blocksBot": sum(1 for pr in prs if pr.get("blocksBot")),
+        "mergeBot": {
+            "eligible": sum(1 for pr in prs if pr.get("mergeBot")),
+            "ready": sum(1 for pr in prs if (pr.get("mergeBot") or {}).get("ready")),
+        },
+        "groups": dict(Counter(g["kind"] for g in groups)),
+        "diffs": {"known": len(cache), "readNow": read, "pending": pending},
+    }
+    write_json(os.path.join(directory, "diffs.json"), cache)
+    write_json(
+        os.path.join(directory, "prs.json"),
+        {"format": FORMAT, "generatedAt": now, "prs": prs, "groups": groups},
+    )
+    write_json(os.path.join(directory, "meta.json"), meta, indent=2)
+    print(json.dumps(meta, indent=2))
+    return 0

@@ -1,0 +1,15 @@
+# Settings for ruff (`nix fmt`, and the lint check); the code needs nothing
+# installed beyond nixkeeper's source (the flake puts it on PYTHONPATH).
+[project]
+name = "nixkeeper-prs"
+version = "0.1.0"
+description = "A digest of nixpkgs' open pull requests, sorted by what they change, for nixkeeper."
+license = "MIT"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 88  # Python's standard (Black / ruff default)
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, bugbear, pyupgrade, simplify, isort
+select = ["E", "F", "W", "B", "UP", "SIM", "I"]
