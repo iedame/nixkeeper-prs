@@ -316,6 +316,13 @@ class IssuesAndMerged(unittest.TestCase):
             "mergedAt": "2026-10-08T03:00:00Z",
             "author": {"login": "r-ryantm"},
             "mergedBy": None,  # a deleted account
+            "files": {
+                "nodes": [
+                    {"path": "pkgs/by-name/fo/foo/package.nix"},
+                    {"path": "pkgs/by-name/fo/foo/fix.patch"},
+                    {"path": "nixos/tests/foo.nix"},
+                ]
+            },
         }
         answer = {
             "search": {
@@ -341,6 +348,7 @@ class IssuesAndMerged(unittest.TestCase):
                 "merged": "2026-10-08T03:00:00Z",
                 "author": "r-ryantm",
                 "mergedBy": "ghost",
+                "packages": ["foo"],
             },
         )
         too_many = {"search": {**answer["search"], "issueCount": 1001}}
