@@ -22,6 +22,10 @@ HYDRA_DIGEST_URL = os.environ.get(
     "NIXKEEPER_PRS_HYDRA_DIGEST",
     "https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/builds.csv.gz",
 )
+CHANNEL_REVISION_URL = os.environ.get(
+    "NIXKEEPER_PRS_CHANNEL_REVISION",
+    "https://channels.nixos.org/nixos-unstable/git-revision",
+)
 QUEUE_URL = os.environ.get(
     "NIXKEEPER_PRS_QUEUE",
     "https://raw.githubusercontent.com/iedame/nixkeeper-updates/data/data/queue.json.gz",
@@ -97,3 +101,8 @@ def queue(url=QUEUE_URL):
             item["by"] = when.date().isoformat()
         found[attr] = item
     return found
+
+
+def channel_revision(url=CHANNEL_REVISION_URL):
+    """The nixpkgs commit the nixos-unstable channel is at."""
+    return fetch.get(url).decode().strip()
