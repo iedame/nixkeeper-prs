@@ -60,7 +60,19 @@ On the `data` branch:
   inits of one attribute).
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
-  merge-bot eligible and ready, the groups, and the diffs read.
+  merge-bot eligible and ready, the groups, the diffs read, and the issues
+  and merged PRs listed (`issues`, `merged`: how many and when; a listing
+  that failed keeps the last one, its time saying so).
+- [`data/issues.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/issues.json):
+  every open issue's number and title (`issues`: `[{"n", "title"}]`), for
+  counting a package's issues by the words in their titles, as nixkeeper
+  does.
+- [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
+  the PRs merged into master since the nixos-unstable channel's commit
+  (`revision`, committed at `since`): what master has that the channel
+  doesn't yet (`prs`: `[{"n", "title", "draft", "base", "merged"}]`).
+  Listed with GitHub's search in 12-hour windows (it gives at most 1,000
+  results).
 - `data/diffs.json`: each PR's fingerprint and diff facts by the head
   commit it was read at, so a diff is read again only when the PR changes.
 

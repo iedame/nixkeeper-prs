@@ -12,6 +12,7 @@ import hashlib
 import re
 import sys
 import time
+from datetime import timedelta
 
 from . import fetch
 
@@ -166,6 +167,100 @@ def details(numbers, tok):
 # A PR's diff through the REST API, with the token: github.com's
 # pull/N.diff answers 429 to GitHub Actions' addresses after a few dozen
 # (2026-10-09). One request each, within the token's 5,000 an hour.
+ISSUES_QUERY = """
+query($cursor: String, $page: Int!) {
+  repository(owner: "NixOS", name: "nixpkgs") {
+    issues(states: OPEN, first: $page, after: $cursor,
+           orderBy: {field: CREATED_AT, direction: ASC}) {
+      totalCount
+      pageInfo { hasNextPage endCursor }
+      nodes { number title }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+
+def open_issues(tok):
+    """Every open issue of nixpkgs: [{"n", "title"}] (nixkeeper counts a
+    package's issues by the words in their titles)."""
+    found, cursor = [], None
+    clock = Clock("open issues", 25)
+    while True:
+        data = fetch.graphql(ISSUES_QUERY, {"cursor": cursor, "page": LIST_PAGE}, tok)
+        issues = data["repository"]["issues"]
+        found += [{"n": i["number"], "title": i["title"]} for i in issues["nodes"] if i]
+        clock.tick(len(found), issues["totalCount"], data.get("rateLimit"))
+        if not issues["pageInfo"]["hasNextPage"]:
+            return found
+        cursor = issues["pageInfo"]["endCursor"]
+
+
+MERGED_QUERY = """
+query($q: String!, $after: String) {
+  search(type: ISSUE, query: $q, first: 100, after: $after) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on PullRequest { number title isDraft baseRefName mergedAt }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+COMMIT_DATE_QUERY = """
+query($rev: String!) {
+  repository(owner: "NixOS", name: "nixpkgs") {
+    object(expression: $rev) { ... on Commit { committedDate } }
+  }
+}
+"""
+# GitHub's search gives at most 1,000 results: merged PRs are listed in
+# windows of this many hours (nixpkgs merges a few hundred a day into master),
+# as nixkeeper's own listing does.
+WINDOW_HOURS = 12
+
+
+def commit_date(revision, tok):
+    """When a nixpkgs commit was committed (ISO 8601), or None."""
+    data = fetch.graphql(COMMIT_DATE_QUERY, {"rev": revision}, tok)
+    return ((data.get("repository") or {}).get("object") or {}).get("committedDate")
+
+
+def merged_since(since, now, tok):
+    """PRs merged into master from since to now (datetimes): [{"n", "title",
+    "draft", "base", "merged"}]. Raises when a window has more than search's
+    1,000 results (some would be missing)."""
+    found, start = [], since
+    while start < now:
+        stop = min(start + timedelta(hours=WINDOW_HOURS), now)
+        window = f"{start:%Y-%m-%dT%H:%M:%SZ}..{stop:%Y-%m-%dT%H:%M:%SZ}"
+        query = f"repo:NixOS/nixpkgs is:pr is:merged base:master merged:{window}"
+        after = None
+        while True:
+            data = fetch.graphql(MERGED_QUERY, {"q": query, "after": after}, tok)
+            page = data["search"]
+            if page["issueCount"] > 1000:
+                raise OSError(f"more than 1,000 PRs merged in {window}")
+            found += [
+                {
+                    "n": p["number"],
+                    "title": p["title"],
+                    "draft": p["isDraft"],
+                    "base": p["baseRefName"],
+                    "merged": p["mergedAt"],
+                }
+                for p in page["nodes"]
+                if p and p.get("number")
+            ]
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            after = page["pageInfo"]["endCursor"]
+        start = stop
+    return found
+
+
 DIFF_URL = "https://api.github.com/repos/NixOS/nixpkgs/pulls/{n}"
 DIFF_TYPE = "application/vnd.github.diff"
 # What changes between two copies of the same diff: the blob ids ("index

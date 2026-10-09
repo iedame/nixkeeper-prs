@@ -267,3 +267,94 @@ class RateLimit(unittest.TestCase):
             self.assertRaises(fetch.RateLimited),
         ):
             fetch.get("https://api.github.com/x", tok="t")
+
+
+class IssuesAndMerged(unittest.TestCase):
+    def test_open_issues_every_page(self):
+        pages = [
+            {
+                "repository": {
+                    "issues": {
+                        "totalCount": 2,
+                        "pageInfo": {"hasNextPage": True, "endCursor": "c"},
+                        "nodes": [{"number": 1, "title": "wesnoth: crashes"}],
+                    }
+                }
+            },
+            {
+                "repository": {
+                    "issues": {
+                        "totalCount": 2,
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [{"number": 2, "title": "foo: build failure"}],
+                    }
+                }
+            },
+        ]
+        with mock.patch.object(fetch, "graphql", side_effect=pages):
+            self.assertEqual(
+                github.open_issues("t"),
+                [
+                    {"n": 1, "title": "wesnoth: crashes"},
+                    {"n": 2, "title": "foo: build failure"},
+                ],
+            )
+
+    def test_merged_in_windows(self):
+        start = cli.datetime.fromisoformat("2026-10-08T00:00:00+00:00")
+        end = cli.datetime.fromisoformat("2026-10-09T06:00:00+00:00")  # 30 hours
+        node = {
+            "number": 5,
+            "title": "foo: 1.0 -> 1.1",
+            "isDraft": False,
+            "baseRefName": "master",
+            "mergedAt": "2026-10-08T03:00:00Z",
+        }
+        answer = {
+            "search": {
+                "issueCount": 1,
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [node],
+            }
+        }
+        with mock.patch.object(fetch, "graphql", return_value=answer) as asked:
+            found = github.merged_since(start, end, "t")
+        self.assertEqual(asked.call_count, 3)  # 12 + 12 + 6 hours
+        self.assertIn(
+            "merged:2026-10-08T00:00:00Z..2026-10-08T12:00:00Z",
+            asked.call_args_list[0].args[1]["q"],
+        )
+        self.assertEqual(
+            found[0],
+            {
+                "n": 5,
+                "title": "foo: 1.0 -> 1.1",
+                "draft": False,
+                "base": "master",
+                "merged": "2026-10-08T03:00:00Z",
+            },
+        )
+        too_many = {"search": {**answer["search"], "issueCount": 1001}}
+        with (
+            mock.patch.object(fetch, "graphql", return_value=too_many),
+            self.assertRaises(OSError),
+        ):
+            github.merged_since(start, end, "t")
+
+    def test_a_failed_listing_keeps_the_last(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            cli.write_json(
+                f"{d}/issues.json", {"generatedAt": "then", "issues": [{"n": 1}]}
+            )
+            with (
+                mock.patch.object(github, "open_issues", side_effect=OSError("down")),
+                mock.patch("sys.stderr"),
+            ):
+                self.assertEqual(
+                    cli.list_issues(d, "t", "now"), {"count": 1, "at": "then"}
+                )
+            self.assertEqual(
+                cli.read_json(f"{d}/issues.json", {})["generatedAt"], "then"
+            )

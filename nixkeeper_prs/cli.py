@@ -5,6 +5,10 @@ digest of nixpkgs' open PRs to DATA_DIR (default data/):
                  (facts.analyse), and the groups of duplicates
     diffs.json   each PR's diff fingerprint and facts (diffs.py), by the head
                  commit it was read at: read again only when the PR changes
+    issues.json  every open issue's number and title (nixkeeper counts a
+                 package's issues by them)
+    merged.json  the PRs merged into master since the nixos-unstable
+                 channel's commit (what master has that the channel doesn't)
     meta.json    when, how many, and how many of each kind
 
 The PRs' details: a full sweep the first time and every FULL_EVERY (about
@@ -150,6 +154,63 @@ def sweep(previous, swept_at, now, tok):
     return prs, "changed", len(listed)
 
 
+def list_issues(directory, tok, now):
+    """Write issues.json (every open issue); on failure keep the last one.
+    Returns meta's "issues" ({"count", "at"}: the last listing that worked)."""
+    path = os.path.join(directory, "issues.json")
+    try:
+        issues = github.open_issues(tok)
+    except (OSError, ValueError, KeyError) as e:
+        print(
+            f"::warning::Listing open issues failed ({e}): the last kept.",
+            file=sys.stderr,
+        )
+        last = read_json(path, {})
+        return {"count": len(last.get("issues") or []), "at": last.get("generatedAt")}
+    write_json(path, {"format": FORMAT, "generatedAt": now, "issues": issues})
+    return {"count": len(issues), "at": now}
+
+
+def list_merged(directory, tok, now):
+    """Write merged.json (PRs merged into master since the channel's
+    commit); on failure keep the last one. Returns meta's "merged"
+    ({"count", "at", "revision", "since"})."""
+    path = os.path.join(directory, "merged.json")
+    try:
+        revision = sources.channel_revision()
+        since = github.commit_date(revision, tok)
+        if not since:
+            raise OSError(f"no commit date for the channel's revision {revision}")
+        merged = github.merged_since(
+            datetime.fromisoformat(since.replace("Z", "+00:00")),
+            datetime.fromisoformat(now),
+            tok,
+        )
+    except (OSError, ValueError, KeyError) as e:
+        print(
+            f"::warning::Listing merged PRs failed ({e}): the last kept.",
+            file=sys.stderr,
+        )
+        last = read_json(path, {})
+        return {
+            "count": len(last.get("prs") or []),
+            "at": last.get("generatedAt"),
+            "revision": last.get("revision"),
+            "since": last.get("since"),
+        }
+    write_json(
+        path,
+        {
+            "format": FORMAT,
+            "generatedAt": now,
+            "revision": revision,
+            "since": since,
+            "prs": merged,
+        },
+    )
+    return {"count": len(merged), "at": now, "revision": revision, "since": since}
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     directory = argv[0] if argv else "data"
@@ -177,6 +238,12 @@ def main(argv=None):
     index = sources.channel()
     master = sources.master(index)
     queue = sources.queue()
+    print(
+        "Listing open issues and PRs merged since the channel's commit...",
+        file=sys.stderr,
+    )
+    issues_meta = list_issues(directory, tok, now)
+    merged_meta = list_merged(directory, tok, now)
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})
     # The diffs' time starts now, whatever the PRs took.
@@ -208,6 +275,8 @@ def main(argv=None):
         },
         "groups": dict(Counter(g["kind"] for g in groups)),
         "diffs": {"known": len(cache), "readNow": read, "pending": pending},
+        "issues": issues_meta,
+        "merged": merged_meta,
     }
     write_json(os.path.join(directory, "diffs.json"), cache)
     write_json(
