@@ -358,7 +358,8 @@ class IssuesAndMerged(unittest.TestCase):
                 mock.patch("sys.stderr"),
             ):
                 self.assertEqual(
-                    cli.list_issues(d, "t", "now", {}), {"count": 1, "at": "then"}
+                    cli.list_issues(d, "t", "now", {}, {}, {}, {}),
+                    {"count": 1, "at": "then"},
                 )
             self.assertEqual(
                 cli.read_json(f"{d}/issues.json", {})["generatedAt"], "then"

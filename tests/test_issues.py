@@ -89,5 +89,75 @@ class Check(unittest.TestCase):
         self.assertIsNone(self.verdict("wesnoth: crashes"))
 
 
+INDEX = {
+    "swiftpm": {"version": "6.2.4"},
+    "spideroak": {"version": "7.5.2"},
+    "synergy": {"version": "1.14.6.19-stable"},
+    "cassandra": {"version": "4.1.8"},
+    "zitadel": {"version": "2.80.0"},
+    "python313Packages.foo": {"version": "1.0"},
+}
+NAMES = {a.lower(): a for a in INDEX}
+
+
+class UpdateRequests(unittest.TestCase):
+    def check(self, title, master=None, updates=None):
+        return issues.check_update(title, INDEX, NAMES, master or {}, updates or {})
+
+    def test_done(self):
+        found = self.check("Update Request: swiftpm 5.8.0 → 6.1.0")
+        self.assertEqual(
+            found,
+            {
+                "package": "swiftpm",
+                "from": "5.8.0",
+                "to": "6.1.0",
+                "now": "6.2.4",
+                "verdict": "done",
+            },
+        )
+        self.assertEqual(
+            self.check("Update Request: spideroak 7.5.0 -> 7.5.2")["verdict"], "done"
+        )
+
+    def test_a_v_prefix_is_no_word(self):
+        """v3.2.1 sorts below any number for Nix: compared without the v."""
+        self.assertEqual(
+            self.check("Update Request: Synergy 1.14.6.19-stable → v3.2.1")["verdict"],
+            "open",
+        )
+
+    def test_open_with_its_pr(self):
+        found = self.check(
+            "Update Request: cassandra 4.1.8 → 5.0.4", updates={"cassandra": [406078]}
+        )
+        self.assertEqual((found["verdict"], found["prs"]), ("open", [406078]))
+
+    def test_partly_and_master_first(self):
+        self.assertEqual(
+            self.check("Update Request: zitadel 2.71.7 → 4.0.0")["verdict"], "partly"
+        )
+        self.assertEqual(
+            self.check(
+                "Update Request: zitadel 2.71.7 → 4.0.0", master={"zitadel": "4.0.1"}
+            )["verdict"],
+            "done",
+        )
+
+    def test_others(self):
+        self.assertEqual(
+            self.check("Update request: nosuch 1 → 2")["verdict"], "notFound"
+        )
+        self.assertEqual(
+            self.check("Update request: python3Packages.foo 0.9 → 1.0")["verdict"],
+            "done",
+        )
+        self.assertEqual(
+            self.check("Update request: cassandra 4.1.8 → unstable?")["verdict"],
+            "notVersion",
+        )
+        self.assertIsNone(self.check("Update request: jaxlib with ROCm support"))
+
+
 if __name__ == "__main__":
     unittest.main()

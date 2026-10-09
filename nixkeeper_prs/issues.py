@@ -10,6 +10,8 @@ guess: each issue says what it checked."""
 
 import re
 
+from . import nixversions
+
 BUILD_FAILURE = re.compile(r"^\s*\[?build failure\]?\s*:?", re.IGNORECASE)
 PACKAGE = re.compile(r"^[\s`'\"]*([A-Za-z_][\w.+-]*)")
 # Platforms a title can name, as Hydra's systems.
@@ -114,4 +116,54 @@ def check(title, jobs, python_set="python313packages."):
         found["verdict"] = "builds"
     else:
         found["verdict"] = "waiting"
+    return found
+
+
+# nixpkgs' update request template: "Update request: foo 1.2.3 → 1.3.0".
+UPDATE_REQUEST = re.compile(
+    r"^\s*\[?update request\]?\s*:?\s*[`'\"]?([A-Za-z_][\w.+-]*)[`'\"]?\s+"
+    r"(\S+)\s*(?:->|→|=>|\bto\b)\s*(\S+)",
+    re.IGNORECASE,
+)
+DIGIT = re.compile(r"\d")
+
+
+def plain(version):
+    """A version as compared: no leading "v" ("v3.2.1"), no trailing
+    punctuation."""
+    return re.sub(r"^[vV](?=\d)", "", version.strip("`'\".,;:()[]"))
+
+
+def check_update(title, index, names, master, open_updates):
+    """What nixpkgs has of an update request: None for other titles, else
+    {"package", "from", "to", "verdict", "now"?, "prs"?}. verdict (by Nix's
+    order): "done" (nixpkgs has to, or newer: a candidate to close),
+    "partly" (moved past from, not up to to), "open", "notFound" (no
+    package by that name), "notVersion" (to isn't a version: "unstable?").
+    now: master's version, else the channel's; prs: open update PRs for
+    the package (open_updates: {attribute in lower case: [numbers]}).
+    names: {attribute in lower case: attribute} of the index."""
+    m = UPDATE_REQUEST.match(title)
+    if not m:
+        return None
+    package, frm, to = m.group(1), plain(m.group(2)), plain(m.group(3))
+    found = {"package": package, "from": frm, "to": to}
+    key = package.lower()
+    attr = names.get(key) or names.get(PYTHON_ALIAS.sub("python313packages.", key))
+    if not attr:
+        found["verdict"] = "notFound"
+        return found
+    if prs := open_updates.get(attr.lower()):
+        found["prs"] = prs
+    if not DIGIT.search(to):
+        found["verdict"] = "notVersion"
+        return found
+    now = master.get(attr) or (index.get(attr) or {}).get("version")
+    found["now"] = now
+    if now and nixversions.compare(plain(now), to) >= 0:
+        found["verdict"] = "done"
+    elif now and DIGIT.search(frm) and nixversions.compare(plain(now), frm) > 0:
+        found["verdict"] = "partly"
+    else:
+        found["verdict"] = "open"
     return found

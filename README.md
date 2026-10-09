@@ -67,7 +67,8 @@ On the `data` branch:
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, the diffs read, and the issues
   and merged PRs listed (`issues`, `merged`: how many and when, and
-  `issues.buildFailures`: build-failure issues by Hydra's verdict; a
+  `issues.buildFailures` and `issues.updateRequests`: those issues by
+  verdict; a
   listing that failed keeps the last one, its time saying so).
 - [`data/issues.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/issues.json):
   every open issue's number and title (`issues`: `[{"n", "title",
@@ -81,7 +82,14 @@ On the `data` branch:
   or not finished; `variant`: musl, static, cross..., which Hydra doesn't
   build; `noJob`; `platformNotBuilt`), `systems` checked, and `condition`
   when the title says more than the package and where ("with ROCm", "in a
-  non-default store"): only a person can check those.
+  non-default store"): only a person can check those. An update request
+  (`Update request: foo 1.2.3 → 1.3.0`, nixpkgs' template) has `update`:
+  `package`, `from`, `to` (a leading `v` dropped: Nix sorts "v1.2" below
+  any number), `now` (master's version, else the channel's), `verdict` by
+  Nix's order (`done`: nixpkgs has `to` or newer, a candidate to close;
+  `partly`: moved past `from`, not up to `to`; `open`; `notFound`: no
+  package by that name; `notVersion`: `to` isn't a version), and `prs`: the
+  open update PRs for that package.
 - [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel
