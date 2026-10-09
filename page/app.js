@@ -2,7 +2,9 @@
 // branch's data/prs.json), in views (what to act on) and filters, a plain
 // table, more rows as you scroll. Nothing is sent anywhere.
 
-const DATA = 'https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/prs.json';
+const BASE = 'https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/';
+const DATA = `${BASE}prs.json`;
+const ISSUE_URL = 'https://github.com/NixOS/nixpkgs/issues/';
 const PR_URL = 'https://github.com/NixOS/nixpkgs/pull/';
 // The same PR on ghdiff.com, a fast review site (github.com's path on its
 // host; it asks for your own GitHub token, kept in your browser). Not ours:
@@ -13,11 +15,16 @@ const STEP = 200;
 // nixpkgs' CI labels: what it says about a PR, more reliably than the
 // API's fields (GitHub's merge state is UNKNOWN for most PRs).
 const has = (p, label) => p.labels.includes(label);
-const hasPrefix = (p, prefix) => p.labels.some((l) => l.startsWith(prefix));
 // nixpkgs' CI's verdict, or the digest's own for r-ryantm's PRs.
 const mergeBotEligible = (p) => has(p, '2.status: merge-bot eligible') || Boolean(p.mergeBot);
 const conflicts = (p) => has(p, '2.status: merge conflict') || p.mergeable === 'CONFLICTING';
 const DAY_MS = 86400e3;
+// How many of xs have each key(x).
+function countBy(xs, key) {
+  const counts = {};
+  for (const x of xs) counts[key(x)] = (counts[key(x)] || 0) + 1;
+  return counts;
+}
 const daysSince = (iso) => (Date.now() - new Date(iso)) / DAY_MS;
 // How many packages a PR rebuilds, the most of Linux's and Darwin's labels
 // ("10.rebuild-linux: 11-100" → 11): null when CI hasn't said.
@@ -211,6 +218,7 @@ function readFilters() {
 }
 
 function writeFilters() {
+  if (tab !== 'prs') return;
   const params = new URLSearchParams();
   if (view !== 'all') params.set('view', view);
   for (const id of ['q', 'maintainer', 'bucket', 'base', 'rebuilds', 'label', 'sort'])
@@ -392,6 +400,246 @@ function render() {
   drawMore();
 }
 
+// The tabs: open PRs (above), open issues, and the PRs merged into master
+// that the channel doesn't have yet; the last two loaded when first shown.
+let tab = 'prs';
+const loaded = {};
+
+async function loadJson(name) {
+  const res = await fetch(`${BASE}${name}`, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`${name}: ${res.status}`);
+  return res.json();
+}
+
+// A list drawn STEP rows at a time as you scroll (tbody, the "more" line).
+function pager(rowsId, moreId, draw) {
+  const pg = { list: [], shown: 0 };
+  pg.more = () => {
+    const next = pg.list.slice(pg.shown, pg.shown + STEP);
+    $(rowsId).insertAdjacentHTML('beforeend', next.map(draw).join(''));
+    pg.shown += next.length;
+    $(moreId).textContent =
+      pg.shown < pg.list.length ? `Showing ${pg.shown} of ${pg.list.length}…` : '';
+  };
+  pg.set = (list) => {
+    pg.list = list;
+    pg.shown = 0;
+    $(rowsId).innerHTML = '';
+    pg.more();
+  };
+  new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting) && pg.shown < pg.list.length) pg.more();
+  }).observe($(moreId));
+  return pg;
+}
+
+// Issues, by their title's convention (nixpkgs' issue templates).
+const ISSUE_KINDS = [
+  ['build', /^\s*\[?build failure\b/i, 'Build failure'],
+  ['update', /^\s*\[?update request\b/i, 'Update request'],
+  ['package', /^\s*\[?package request\b/i, 'Package request'],
+  ['module', /^\s*\[?module request\b/i, 'Module request'],
+  ['unreproducible', /^\s*\[?unreproducible package\b/i, 'Unreproducible'],
+  ['docs', /^\s*\[?(?:missing )?(?:documentation|doc|nixpkgs manual)\b/i, 'Documentation'],
+  ['tracking', /^\s*\[?tracking(?: issue)?\b/i, 'Tracking'],
+  ['feature', /^\s*\[?feature request\b/i, 'Feature request'],
+];
+// "foo: …", or the package after a template's prefix ("Build failure: foo").
+const ATTR = /^[\s`'"]*([A-Za-z_][\w.+-]*)/;
+const KIND_WORDS = new Set([
+  'build',
+  'update',
+  'package',
+  'module',
+  'unreproducible',
+  'documentation',
+  'doc',
+  'tracking',
+  'feature',
+  'missing',
+  'nixpkgs',
+  'rfc',
+  'bug',
+  'error',
+  'request',
+]);
+
+function issueFacts(i) {
+  const found = ISSUE_KINDS.find(([, re]) => re.test(i.title));
+  const kind = found ? found[0] : 'other';
+  let pkg = null;
+  if (found && ['build', 'update', 'package', 'unreproducible'].includes(kind)) {
+    const rest = i.title.slice(i.title.indexOf(':') + 1);
+    pkg = i.title.includes(':') ? ATTR.exec(rest)?.[1] : null;
+  } else if (!found) {
+    const m = /^\s*([A-Za-z_][\w.+-]*)\s*:/.exec(i.title);
+    if (m && !KIND_WORDS.has(m[1].toLowerCase())) pkg = m[1];
+  }
+  return { ...i, kind, pkg: pkg?.replace(/[.:,]+$/, '') || null };
+}
+
+// Open PRs by package: their title's "attr:" and the by-name directories.
+function prsByPackage() {
+  const map = new Map();
+  const add = (name, n) => {
+    if (!name) return;
+    const key = name.toLowerCase();
+    map.set(key, [...new Set([...(map.get(key) || []), n])]);
+  };
+  for (const p of prs) {
+    add(/^([\w.+-]+):/.exec(p.title)?.[1], p.n);
+    for (const pkg of p.packages || []) add(pkg, p.n);
+  }
+  return map;
+}
+
+const HYDRA_JOB = 'https://hydra.nixos.org/job/nixpkgs/unstable/';
+// What Hydra says of a build-failure issue (the digest's issues.py).
+function hydraCell(i) {
+  const h = i.hydra;
+  if (!h) return '';
+  const job = (system) =>
+    `<a href="${HYDRA_JOB}${encodeURIComponent(`${h.package}.${system}`)}">${esc(system)}</a>`;
+  switch (h.verdict) {
+    case 'builds':
+      return `<span class="fact ${h.condition ? 'warn' : 'good'}" title="${h.condition ? 'Builds on Hydra, but the title adds a condition to check' : 'Every Hydra job it concerns builds: a candidate to close'}">builds</span> ${(h.systems || []).map(job).join(' ')}`;
+    case 'failing':
+      return `<span class="fact bad">failing</span> ${Object.entries(h.reasons || {})
+        .map(
+          ([system, reason]) =>
+            `${job(system)}${reason ? ` <span class="buckets">${esc(reason)}</span>` : ''}`,
+        )
+        .join(' ')}`;
+    default:
+      return `<span class="buckets">${esc({ waiting: 'dependency failed or not finished', variant: "a variant Hydra doesn't build", noJob: 'no Hydra job by that name', platformNotBuilt: 'platform not built by Hydra' }[h.verdict] || h.verdict)}</span>`;
+  }
+}
+const HYDRA_FILTERS = {
+  close: (h) => h?.verdict === 'builds' && !h.condition,
+  condition: (h) => h?.verdict === 'builds' && h.condition,
+  failing: (h) => h?.verdict === 'failing',
+  other: (h) => h && !['builds', 'failing'].includes(h.verdict),
+};
+
+let issues = [];
+let openFor = new Map();
+let issuePager;
+function issueRow(i) {
+  const label = ISSUE_KINDS.find(([k]) => k === i.kind)?.[2] || '';
+  const prsFor = (i.pkg && openFor.get(i.pkg.toLowerCase())) || [];
+  return `<tr>
+    <td class="num"><a href="${ISSUE_URL}${i.n}">#${i.n}</a></td>
+    <td class="title">${esc(i.title)}</td>
+    <td>${esc(label)}</td>
+    <td class="mono">${esc(i.pkg || '')}</td>
+    <td>${hydraCell(i)}</td>
+    <td>${prsFor.map((n) => `<a href="${PR_URL}${n}">#${n}</a>`).join(' ')}</td>
+  </tr>`;
+}
+function renderIssues() {
+  const q = $('iq').value.trim().toLowerCase();
+  const kind = $('ikind').value;
+  const withPr = $('ihasPr').checked;
+  const hydra = $('ihydra').value;
+  const list = issues.filter(
+    (i) =>
+      (!kind || i.kind === kind) &&
+      (!hydra || HYDRA_FILTERS[hydra](i.hydra)) &&
+      (!withPr || (i.pkg && openFor.has(i.pkg.toLowerCase()))) &&
+      (!q || `#${i.n} ${i.title} ${i.pkg || ''}`.toLowerCase().includes(q)),
+  );
+  $('icount').textContent = `${list.length.toLocaleString()} issues`;
+  issuePager.set(list);
+  writeTab({ q: $('iq').value, kind, hydra, pr: withPr ? '1' : '' });
+}
+
+let merged = { prs: [] };
+let mergedPager;
+const UPDATE_TITLE = /^[\w.+-]+: \S*\d\S* (?:->|→) \S*\d\S*\s*$/;
+function mergedRow(p) {
+  return `<tr>
+    <td class="num"><a href="${PR_URL}${p.n}">#${p.n}</a></td>
+    <td class="title">${esc(p.title)}</td>
+    <td class="num" title="${esc(p.merged)}">${ago(p.merged)}</td>
+    <td>${esc(p.base)}</td>
+  </tr>`;
+}
+function renderMerged() {
+  const q = $('mq').value.trim().toLowerCase();
+  const updates = $('mupdates').checked;
+  const list = merged.prs
+    .filter(
+      (p) =>
+        (!updates || UPDATE_TITLE.test(p.title)) &&
+        (!q || `#${p.n} ${p.title}`.toLowerCase().includes(q)),
+    )
+    .sort((a, b) => b.merged.localeCompare(a.merged));
+  $('mcount').textContent = `${list.length.toLocaleString()} PRs`;
+  mergedPager.set(list);
+  writeTab({ q: $('mq').value, updates: updates ? '1' : '' });
+}
+
+// The address of an issues or merged tab, with its filters.
+function writeTab(values) {
+  const params = new URLSearchParams({ tab });
+  for (const [k, v] of Object.entries(values)) if (v) params.set(k, v);
+  history.replaceState(null, '', `${location.pathname}?${params}`);
+}
+
+async function showTab(name) {
+  tab = name;
+  for (const b of $('tabs').querySelectorAll('button'))
+    b.setAttribute('aria-pressed', b.dataset.tab === tab);
+  for (const t of ['prs', 'issues', 'merged']) $(`tab-${t}`).hidden = t !== tab;
+  const params = new URLSearchParams(location.search);
+  if (tab === 'prs') return render();
+  try {
+    if (tab === 'issues' && !loaded.issues) {
+      $('icount').textContent = 'Loading the issues…';
+      const data = await loadJson('issues.json');
+      issues = data.issues.map(issueFacts);
+      openFor = prsByPackage();
+      const counts = countBy(issues, (i) => i.kind);
+      $('ikind').insertAdjacentHTML(
+        'beforeend',
+        [...ISSUE_KINDS, ['other', null, 'Other']]
+          .map(
+            ([k, , label]) =>
+              `<option value="${k}">${label} (${(counts[k] || 0).toLocaleString()})</option>`,
+          )
+          .join(''),
+      );
+      issuePager = pager('irows', 'imore', issueRow);
+      $('iq').value = params.get('q') || '';
+      $('ikind').value = params.get('kind') || '';
+      $('ihasPr').checked = params.get('pr') === '1';
+      $('ihydra').value = HYDRA_FILTERS[params.get('hydra')] ? params.get('hydra') : '';
+      $('issueFilters').addEventListener('input', renderIssues);
+      $('issueFilters').addEventListener('submit', (e) => e.preventDefault());
+      loaded.issues = true;
+    }
+    if (tab === 'merged' && !loaded.merged) {
+      $('mcount').textContent = 'Loading the merged PRs…';
+      merged = await loadJson('merged.json');
+      const hours = daysSince(merged.since) * 24;
+      const age = hours < 48 ? `${Math.floor(hours)} h ago` : `${Math.floor(hours / 24)} d ago`;
+      $('mhead').innerHTML =
+        `The nixos-unstable channel is at <a href="https://github.com/NixOS/nixpkgs/commit/${esc(merged.revision)}" class="mono">${esc(merged.revision.slice(0, 10))}</a>, committed ${new Date(merged.since).toLocaleString()} (${age}): ${merged.prs.length.toLocaleString()} PRs merged into master since, waiting for the channel. As of ${new Date(merged.generatedAt).toLocaleString()}.`;
+      mergedPager = pager('mrows', 'mmore', mergedRow);
+      $('mq').value = params.get('q') || '';
+      $('mupdates').checked = params.get('updates') === '1';
+      $('mergedFilters').addEventListener('input', renderMerged);
+      $('mergedFilters').addEventListener('submit', (e) => e.preventDefault());
+      loaded.merged = true;
+    }
+  } catch (e) {
+    $(tab === 'issues' ? 'icount' : 'mcount').textContent = `Couldn't read it (${e.message}).`;
+    return;
+  }
+  if (tab === 'issues') renderIssues();
+  else renderMerged();
+}
+
 async function main() {
   readFilters();
   let data;
@@ -418,9 +666,7 @@ async function main() {
         `<button type="button" data-view="${key}" title="${esc(v.title || '')}">${esc(v.label)} <b>${prs.filter(v.test).length.toLocaleString()}</b></button>`,
     )
     .join('');
-  const bases = Object.entries(
-    prs.reduce((n, p) => ({ ...n, [p.base]: (n[p.base] || 0) + 1 }), {}),
-  ).sort((a, b) => b[1] - a[1]);
+  const bases = Object.entries(countBy(prs, (p) => p.base)).sort((a, b) => b[1] - a[1]);
   $('base').insertAdjacentHTML(
     'beforeend',
     bases
@@ -446,7 +692,14 @@ async function main() {
   new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting) && shown < list.length) drawMore();
   }).observe($('more'));
-  render();
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.dataset.tab === tab) return;
+    history.replaceState(null, '', location.pathname); // each tab starts unfiltered
+    showTab(b.dataset.tab);
+  });
+  const start = new URLSearchParams(location.search).get('tab');
+  showTab(['issues', 'merged'].includes(start) ? start : 'prs');
 }
 
 main();

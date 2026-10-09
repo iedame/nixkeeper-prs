@@ -66,12 +66,22 @@ On the `data` branch:
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, the diffs read, and the issues
-  and merged PRs listed (`issues`, `merged`: how many and when; a listing
-  that failed keeps the last one, its time saying so).
+  and merged PRs listed (`issues`, `merged`: how many and when, and
+  `issues.buildFailures`: build-failure issues by Hydra's verdict; a
+  listing that failed keeps the last one, its time saying so).
 - [`data/issues.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/issues.json):
-  every open issue's number and title (`issues`: `[{"n", "title"}]`), for
-  counting a package's issues by the words in their titles, as nixkeeper
-  does.
+  every open issue's number and title (`issues`: `[{"n", "title",
+  "hydra"?}]`), for counting a package's issues by the words in their
+  titles, as nixkeeper does. A build-failure issue (`Build failure: foo on
+  Darwin`, nixpkgs' template) has `hydra`: what Hydra builds now on master
+  says of it (`nixkeeper_prs/issues.py`, from nixkeeper-hydra's digest):
+  `package`, `verdict` (`builds`: every job it concerns, on the platforms
+  its title names, is ok: a candidate to close; `failing`, with
+  `reasons` by system from the build's log; `waiting`: a dependency failed
+  or not finished; `variant`: musl, static, cross..., which Hydra doesn't
+  build; `noJob`; `platformNotBuilt`), `systems` checked, and `condition`
+  when the title says more than the package and where ("with ROCm", "in a
+  non-default store"): only a person can check those.
 - [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel
