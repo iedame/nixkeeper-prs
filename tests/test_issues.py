@@ -2,7 +2,7 @@
 
 import unittest
 
-from nixkeeper_prs import issues
+from nixkeeper_prs import issues, sources
 
 JOBS = {
     "logcheck": {
@@ -87,6 +87,80 @@ class Check(unittest.TestCase):
             "builds",
         )
         self.assertIsNone(self.verdict("wesnoth: crashes"))
+
+
+ALIASES_NIX = """
+  # removed
+  networkmanager-vpnc = throw "'networkmanager-vpnc' has been removed as insecure";
+  "freeimage" = throw "freeimage was removed due to \\"numerous\\" vulnerabilities";
+  tbb_2022 = onetbb; # added 2025-02-02
+  oldname = warnAlias "oldname was renamed" logcheck;
+  nothing = null;
+"""
+
+
+class NoJob(unittest.TestCase):
+    """With no Hydra job by the title's name: the names it may have now, and
+    else why there's none."""
+
+    def setUp(self):
+        self.aliases = sources.parse_aliases(ALIASES_NIX)
+        self.index = {
+            "android-studio": {"unfree": True},
+            "sommelier": {"broken": True},
+            "nginxmodules.zip": {"notForHydra": True},
+        }
+
+    def verdict(self, title):
+        return issues.check(title, JOBS, self.index, self.aliases)
+
+    def test_aliases_read(self):
+        self.assertEqual(
+            self.aliases["removed"]["networkmanager-vpnc"],
+            "'networkmanager-vpnc' has been removed as insecure",
+        )
+        self.assertIn('"numerous"', self.aliases["removed"]["freeimage"])
+        self.assertEqual(self.aliases["renamed"]["tbb_2022"], "onetbb")
+        self.assertEqual(self.aliases["renamed"]["oldname"], "logcheck")
+        self.assertNotIn("nothing", self.aliases["renamed"])
+
+    def test_removed_with_its_reason(self):
+        found = self.verdict("Build failure: networkmanager-vpnc")
+        self.assertEqual(
+            (found["verdict"], found["reason"]),
+            ("removed", "'networkmanager-vpnc' has been removed as insecure"),
+        )
+
+    def test_checked_under_its_name_now(self):
+        for title, as_, verdict in (
+            (
+                "Build failure: python311Packages.accelerate",
+                "python313packages.accelerate",
+                "builds",
+            ),
+            ("Build failure: po4a-0.69", "po4a", "failing"),
+            ("Build failure: oldname", "logcheck", "builds"),
+        ):
+            with self.subTest(title):
+                found = self.verdict(title)
+                self.assertEqual((found["verdict"], found["checkedAs"]), (verdict, as_))
+
+    def test_what_hydra_doesnt_build(self):
+        self.assertEqual(
+            self.verdict("Build failure: android-studio")["verdict"], "unfree"
+        )
+        self.assertEqual(
+            self.verdict("Build failure: sommelier")["verdict"], "markedBroken"
+        )
+        self.assertEqual(
+            self.verdict("Build failure: nginxModules.zip")["verdict"], "notForHydra"
+        )
+        # Renamed, the new name with no job either.
+        found = self.verdict("Build failure: tbb_2022")
+        self.assertEqual((found["verdict"], found["to"]), ("renamed", "onetbb"))
+        self.assertEqual(
+            self.verdict("Build failure: ppcg (or isl)")["verdict"], "noJob"
+        )
 
 
 INDEX = {

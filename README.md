@@ -94,7 +94,15 @@ On the `data` branch:
   or not finished; `variant`: musl, static, cross..., which Hydra doesn't
   build; `noJob`; `platformNotBuilt`), `systems` checked, and `condition`
   when the title says more than the package and where ("with ROCm", "in a
-  non-default store"): only a person can check those. An update request
+  non-default store"): only a person can check those. With no Hydra job by
+  the title's name, the package is checked under the name it has now
+  (`checkedAs`: `python313Packages.foo` for an older Python's
+  `python311Packages.foo`, `borgbackup` for `borgbackup-1.2.6`, a rename's
+  new name), else the verdict says why there's none: `removed` (in
+  nixpkgs' `pkgs/top-level/aliases.nix`, read from GitHub, with its throw's
+  `reason`: a candidate to close), `renamed` (`to`, with no job either),
+  `unfree`, `markedBroken`, `notForHydra` (`meta.hydraPlatforms` empty:
+  Hydra builds none of those), or still `noJob`. An update request
   (`Update request: foo 1.2.3 → 1.3.0`, nixpkgs' template) has `update`:
   `package`, `from`, `to` (a leading `v` dropped: Nix sorts "v1.2" below
   any number), `now` (master's version, else the channel's), `verdict` by

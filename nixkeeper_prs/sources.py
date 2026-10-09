@@ -30,6 +30,12 @@ QUEUE_URL = os.environ.get(
     "NIXKEEPER_PRS_QUEUE",
     "https://raw.githubusercontent.com/iedame/nixkeeper-updates/data/data/queue.json.gz",
 )
+# nixpkgs' aliases: its removed packages (a throw saying why) and renamed
+# ones (an attribute naming the new one), on master.
+ALIASES_URL = os.environ.get(
+    "NIXKEEPER_PRS_ALIASES",
+    "https://raw.githubusercontent.com/NixOS/nixpkgs/master/pkgs/top-level/aliases.nix",
+)
 # Titles name Python packages by their alias (python3Packages.foo), the index
 # by the versioned set it points to.
 ALIASES = ((re.compile(r"^python3Packages\."), "python313Packages."),)
@@ -44,8 +50,10 @@ def canonical(attr):
 
 
 def channel(url=CHANNEL_INDEX_URL):
-    """{attribute: {"pname", "version", "maintainers": [GitHub handles]}}
-    of the channel's package index."""
+    """{attribute: {"pname", "version", "maintainers": [GitHub handles],
+    "unfree"?, "broken"?, "notForHydra"?}} of the channel's package index:
+    unfree (a license not free), broken (meta.broken), notForHydra
+    (meta.hydraPlatforms empty): what Hydra doesn't build."""
     import brotli  # the flake's Python has it (nixkeeper's sync needs it too)
 
     packages = json.loads(brotli.decompress(fetch.get(url)))["packages"]
@@ -62,7 +70,43 @@ def channel(url=CHANNEL_INDEX_URL):
             "version": p.get("version") or "",
             "maintainers": handles,
         }
+        licenses = meta.get("license") or []
+        if not isinstance(licenses, list):
+            licenses = [licenses]
+        if any(isinstance(lic, dict) and lic.get("free") is False for lic in licenses):
+            found[attr]["unfree"] = True
+        if meta.get("broken"):
+            found[attr]["broken"] = True
+        if meta.get("hydraPlatforms") == []:
+            found[attr]["notForHydra"] = True
     return found
+
+
+# An alias line: `name = ...;` (the name quoted or not).
+ALIAS = re.compile(r'^\s*"?([\w.+-]+)"?\s*=\s*(.+?);', re.MULTILINE)
+THROW = re.compile(r'^throw\s*"((?:[^"\\]|\\.)*)"?')
+# A rename's target: the attribute the line ends with (warnAlias "..." foo).
+TARGET = re.compile(r"([A-Za-z_][\w.+-]*)\s*$")
+
+
+def aliases(url=ALIASES_URL):
+    """nixpkgs' aliases.nix read for what it says of each name: {"removed":
+    {name in lower case: the reason its throw gives}, "renamed": {name in
+    lower case: the new attribute}}. A reading of the Nix file's lines, not
+    an evaluation: what doesn't look like either is left out."""
+    return parse_aliases(fetch.get(url).decode())
+
+
+def parse_aliases(text):
+    removed, renamed = {}, {}
+    for m in ALIAS.finditer(text):
+        name, value = m.group(1).lower(), m.group(2).strip()
+        if value.startswith("throw"):
+            said = THROW.match(value)
+            removed[name] = (said.group(1) if said else "").replace('\\"', '"')
+        elif (target := TARGET.search(value)) and target.group(1) != "null":
+            renamed[name] = target.group(1)
+    return {"removed": removed, "renamed": renamed}
 
 
 def hydra(url=HYDRA_DIGEST_URL):
