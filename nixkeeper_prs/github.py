@@ -15,6 +15,7 @@ import time
 from datetime import timedelta
 
 from . import fetch
+from .sources import BY_NAME
 
 PAGE = 25
 LIST_PAGE = 100
@@ -206,6 +207,7 @@ query($q: String!, $after: String) {
       ... on PullRequest {
         number title isDraft baseRefName mergedAt
         author { login } mergedBy { login }
+        files(first: 100) { nodes { path } }
       }
     }
   }
@@ -233,10 +235,12 @@ def commit_date(revision, tok):
 
 def merged_since(since, now, tok):
     """PRs merged into master from since to now (datetimes): [{"n", "title",
-    "draft", "base", "merged", "author", "mergedBy"}] (author and mergedBy:
-    GitHub logins, "ghost" for a deleted account; who to credit for an
-    update, in nixkeeper's fixes). Raises when a window has more than
-    search's 1,000 results (some would be missing)."""
+    "draft", "base", "merged", "author", "mergedBy", "packages"}] (author
+    and mergedBy: GitHub logins, "ghost" for a deleted account; packages:
+    the pkgs/by-name ones its files touch, of its first 100 files: who to
+    credit for an update, and likely for a build fix, in nixkeeper's
+    fixes). Raises when a window has more than search's 1,000 results
+    (some would be missing)."""
     found, start = [], since
     while start < now:
         stop = min(start + timedelta(hours=WINDOW_HOURS), now)
@@ -257,6 +261,13 @@ def merged_since(since, now, tok):
                     "merged": p["mergedAt"],
                     "author": (p.get("author") or {}).get("login") or "ghost",
                     "mergedBy": (p.get("mergedBy") or {}).get("login") or "ghost",
+                    "packages": sorted(
+                        {
+                            m.group(1)
+                            for f in (p.get("files") or {}).get("nodes") or []
+                            if f and (m := BY_NAME.match(f.get("path") or ""))
+                        }
+                    ),
                 }
                 for p in page["nodes"]
                 if p and p.get("number")

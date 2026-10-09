@@ -118,8 +118,11 @@ On the `data` branch:
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel
   doesn't yet (`prs`: `[{"n", "title", "draft", "base", "merged", "author",
-  "mergedBy"}]`: who opened it and who merged it, GitHub logins, `ghost` for
-  a deleted account; nixkeeper credits an update's fix to them).
+  "mergedBy", "packages"}]`: who opened it and who merged it, GitHub logins,
+  `ghost` for a deleted account; and the `pkgs/by-name` packages its files
+  touch, of its first 100: nixkeeper credits an update's fix to them, and
+  a build fix likely, to a merged PR that touched the package while it
+  failed).
   Listed with GitHub's search in 12-hour windows (it gives at most 1,000
   results).
 - `data/diffs.json`: each PR's fingerprint and diff facts by the head
