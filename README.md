@@ -7,7 +7,7 @@ nixpkgs, which stop the update bot, which duplicate another. nixpkgs gets
 about 2,000 PRs a week, and a few percent are never merged nor closed: the
 point is surfacing the small, mergeable ones before they're buried.
 
-**A proof of concept**: run by hand, with a plain page at
+**A proof of concept**: run hourly, with a plain page at
 <https://iedame.github.io/nixkeeper-prs/> (not linked from nixkeeper.com yet).
 
 ## The digest

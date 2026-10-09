@@ -6,10 +6,13 @@ name: "Digest: nixpkgs' open PRs"
 # nixpkgs has (the channel's index, nixkeeper-hydra's and nixkeeper-updates'
 # digests), and small PRs' diffs from github.com, one request a second
 # (nixkeeper_prs/cli.py). The data branch is main plus one commit with the
-# digest (scripts/data-branch.sh). Run by hand while it's a proof of
-# concept.
+# digest (scripts/data-branch.sh). Hourly: a light list of open PRs and the
+# changed ones' details (minutes), then diffs; once a day a full sweep
+# (about an hour), so that run takes longer and the next waits for it.
 
 on:
+  schedule:
+    - cron: '53 * * * *'  # hourly, off the hour and the other digests' minutes
   workflow_dispatch: {}    # trigger a run from the Actions tab
 
 # One run at a time: a run waits for the last instead of cancelling it.
