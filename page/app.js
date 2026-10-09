@@ -303,7 +303,7 @@ function facts(p) {
   for (const g of duplicateOf.get(p.n) || []) {
     const others = g.prs.filter((n) => n !== p.n);
     out.push(
-      `<span class="fact" title="${g.kind === 'samePackage' ? `Also for ${esc(g.key)}:` : 'The same change as'} ${others.map((n) => `#${n}`).join(', ')}">${{ sameDiff: 'same diff', sameChange: 'same change', samePackage: 'same package' }[g.kind]}: ${others
+      `<span class="fact" title="${g.kind === 'samePackage' ? `Also for ${esc(g.key)}${g.base ? ` into ${esc(g.base)}` : ''}:` : 'The same change as'} ${others.map((n) => `#${n}`).join(', ')}">${{ sameDiff: 'same diff', sameChange: 'same change', samePackage: 'same package' }[g.kind]}: ${others
         .map((n) => `<a href="${PR_URL}${n}">#${n}</a>`)
         .join(' ')}</span>`,
     );
@@ -368,7 +368,7 @@ function groupRow(g) {
       ? 'with the same diff'
       : g.kind === 'sameChange'
         ? 'making the same change (other context)'
-        : `open for the same package: <span class="mono">${esc(g.key)}</span>`;
+        : `open for the same package: <span class="mono">${esc(g.key)}</span>${g.base ? ` into <span class="mono">${esc(g.base)}</span>` : ''}`;
   return `<tr class="group"><td colspan="7"><b>${g.members.length} PRs</b> ${what}</td></tr>`;
 }
 

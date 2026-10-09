@@ -70,7 +70,8 @@ On the `data` branch:
   and `groups` of duplicates: `sameDiff` (the same fingerprint),
   `sameChange` (the same changed lines with other context, when that's not
   already a same-diff group) and `samePackage` (several open updates or
-  inits of one attribute).
+  inits of one attribute into the same branch, `base`: a backport isn't a
+  duplicate of the master update).
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, the diffs read, and the issues

@@ -149,7 +149,26 @@ class Analyse(unittest.TestCase):
             [
                 {"kind": "sameDiff", "key": "aa", "prs": [3, 5]},
                 {"kind": "sameChange", "key": "c2", "prs": [1, 2]},
-                {"kind": "samePackage", "key": "foo", "prs": [1, 2]},
+                {"kind": "samePackage", "key": "foo", "base": "master", "prs": [1, 2]},
+            ],
+        )
+
+    def test_same_package_by_branch(self):
+        prs = [
+            pr(1, "foo: 1.0 -> 1.2"),
+            pr(2, "foo: 1.0 -> 1.1", base="release-26.05"),
+            pr(3, "foo: 1.0 -> 1.2", base="release-26.05"),
+        ]
+        _, groups = facts.analyse(prs, INDEX, {}, {}, {})
+        self.assertEqual(
+            [g for g in groups if g["kind"] == "samePackage"],
+            [
+                {
+                    "kind": "samePackage",
+                    "key": "foo",
+                    "base": "release-26.05",
+                    "prs": [2, 3],
+                }
             ],
         )
 

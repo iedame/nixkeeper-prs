@@ -191,7 +191,8 @@ def analyse(prs, index, master, queue, known, jobs=None):
     already in nixpkgs, its packages failing on Hydra), and the groups of
     duplicates: the same diff (known: {number: (fingerprint, diff facts)},
     diffs.facts'), the same change (only its changed lines), or several
-    open PRs for the same attribute. Returns the PRs and the groups."""
+    open PRs for the same attribute into the same branch. Returns the PRs
+    and the groups."""
     by_hash, by_change, by_attr = {}, {}, {}
     for pr in prs:
         kind, attr, frm, to = title_parts(pr["title"])
@@ -235,7 +236,9 @@ def analyse(prs, index, master, queue, known, jobs=None):
                 if seen.get("cves"):
                     pr["buckets"].append("cve")
         if attr and kind in ("update", "init"):
-            by_attr.setdefault(target, []).append(pr["n"])
+            # By branch too: a backport to a release branch isn't a
+            # duplicate of the same package's update on master.
+            by_attr.setdefault((target, pr["base"]), []).append(pr["n"])
     groups = []
     exact = set()
     for key, numbers in sorted(by_hash.items()):
@@ -246,7 +249,14 @@ def analyse(prs, index, master, queue, known, jobs=None):
         # Not when it's the very same group as a same-diff one.
         if len(numbers) > 1 and tuple(sorted(numbers)) not in exact:
             groups.append({"kind": "sameChange", "key": key, "prs": sorted(numbers)})
-    for key, numbers in sorted(by_attr.items()):
+    for (key, base), numbers in sorted(by_attr.items()):
         if len(numbers) > 1:
-            groups.append({"kind": "samePackage", "key": key, "prs": sorted(numbers)})
+            groups.append(
+                {
+                    "kind": "samePackage",
+                    "key": key,
+                    "base": base,
+                    "prs": sorted(numbers),
+                }
+            )
     return prs, groups
