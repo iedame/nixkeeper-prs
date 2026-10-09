@@ -80,6 +80,23 @@ def jobs_for(package, jobs):
     return jobs.get(key) or jobs.get(PYTHON_ALIAS.sub("python313packages.", key)) or {}
 
 
+def alias_keys(package):
+    """The names package's aliases may be kept under: its own, in lower
+    case, and a Python package's under the current set (python-aliases.nix
+    names them within the set, whichever Python's the title names)."""
+    key = package.lower()
+    keys = [key]
+    if OLD_PYTHON.match(package) or PYTHON_ALIAS.match(package):
+        keys.append(CURRENT_PYTHON + key.split(".", 1)[1])
+    return list(dict.fromkeys(keys))
+
+
+def alias(aliases, kind, package):
+    """What aliases' kind ("removed", "renamed") says of package, or None."""
+    found = (aliases or {}).get(kind, {})
+    return next((found[k] for k in alias_keys(package) if k in found), None)
+
+
 def alternatives(package, aliases):
     """Other names a title's package may have now, in order: in the current
     Python set (an older one's is gone), without a version in its name, the
@@ -89,7 +106,7 @@ def alternatives(package, aliases):
         found.append(CURRENT_PYTHON + package.split(".", 1)[1])
     if m := WITH_VERSION.match(package):
         found.append(m.group(1))
-    if new := (aliases or {}).get("renamed", {}).get(package.lower()):
+    if new := alias(aliases, "renamed", package):
         found.append(new)
     return found
 
@@ -101,12 +118,11 @@ def no_job(found, package, index, aliases):
     "notForHydra" (meta.hydraPlatforms empty); else "noJob". index:
     {attribute in lower case: sources.channel's entry}."""
     key = package.lower()
-    removed = (aliases or {}).get("removed", {})
-    renamed = (aliases or {}).get("renamed", {})
-    if key in removed:
+    reason = alias(aliases, "removed", package)
+    if reason is not None:
         found["verdict"] = "removed"
-        if removed[key]:
-            found["reason"] = removed[key]
+        if reason:
+            found["reason"] = reason
         return found
     names = [key, *(a.lower() for a in alternatives(package, aliases))]
     meta = next(((index or {})[n] for n in names if n in (index or {})), None)
@@ -116,9 +132,9 @@ def no_job(found, package, index, aliases):
         found["verdict"] = "markedBroken"
     elif meta and meta.get("notForHydra"):
         found["verdict"] = "notForHydra"
-    elif key in renamed:
+    elif to := alias(aliases, "renamed", package):
         found["verdict"] = "renamed"
-        found["to"] = renamed[key]
+        found["to"] = to
     else:
         found["verdict"] = "noJob"
     return found
@@ -147,7 +163,7 @@ def check(title, jobs, index=None, aliases=None):
         found["verdict"] = "variant"
         return found
     mine = jobs_for(package, jobs)
-    if not mine and package.lower() not in (aliases or {}).get("removed", {}):
+    if not mine and alias(aliases, "removed", package) is None:
         for other in alternatives(package, aliases):
             if mine := jobs_for(other, jobs):
                 found["checkedAs"] = other
