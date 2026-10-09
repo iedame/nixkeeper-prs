@@ -49,12 +49,26 @@ def _open(req, timeout=60):
     raise AssertionError("unreachable")
 
 
-def get(url, accept=None):
-    """url's body (bytes)."""
+class RateLimited(OSError):
+    """GitHub says too many requests: stop asking for this run."""
+
+
+def get(url, accept=None, tok=None):
+    """url's body (bytes); with tok, as GitHub's API asks (its own limit,
+    the token's). Raises RateLimited when GitHub says too many requests
+    (429, or 403 with no requests left)."""
     headers = {"User-Agent": USER_AGENT}
     if accept:
         headers["Accept"] = accept
-    return _open(urllib.request.Request(url, headers=headers))
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    try:
+        return _open(urllib.request.Request(url, headers=headers))
+    except urllib.error.HTTPError as e:
+        left = (e.headers or {}).get("x-ratelimit-remaining")
+        if e.code == 429 or (e.code == 403 and left == "0"):
+            raise RateLimited(f"{url}: {e.code}, rate limited") from e
+        raise
 
 
 def token():

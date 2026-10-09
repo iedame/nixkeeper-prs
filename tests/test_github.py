@@ -110,8 +110,8 @@ class Diffs(unittest.TestCase):
         ]
         cache = {"1": ["x", "aa"], "99": ["gone", "bb"]}
         with mock.patch.object(github, "diff", return_value=self.A) as got:
-            read, pending = cli.read_diffs(prs, cache, time.monotonic())
-        got.assert_called_once_with(2)  # 1 read at its head, 3 too big
+            read, pending = cli.read_diffs(prs, cache, time.monotonic(), "t")
+        got.assert_called_once_with(2, "t")  # 1 read at its head, 3 too big
         self.assertEqual((read, pending), (1, 0))
         self.assertNotIn("99", cache)  # no longer open
         self.assertEqual(cache["2"][0], "y")
@@ -203,3 +203,36 @@ class Sweep(unittest.TestCase):
         query = asked.call_args.args[0]
         self.assertIn("p7: pullRequest(number: 7)", query)
         self.assertIn("p9: pullRequest(number: 9)", query)
+
+
+class RateLimit(unittest.TestCase):
+    def test_too_many_requests_stops_the_diffs(self):
+        prs = [
+            {
+                "n": n,
+                "head": "h",
+                "updated": "2026-10-01",
+                "changedFiles": 1,
+                "additions": 1,
+                "deletions": 1,
+            }
+            for n in range(5)
+        ]
+        limited = fetch.RateLimited("429")
+        with (
+            mock.patch.object(github, "diff", side_effect=limited) as got,
+            mock.patch("sys.stderr"),
+        ):
+            read, pending = cli.read_diffs(prs, {}, time.monotonic(), "t")
+        self.assertEqual((got.call_count, read, pending), (1, 0, 5))
+
+    def test_a_429_is_rate_limited(self):
+        import io
+        import urllib.error
+
+        err = urllib.error.HTTPError("u", 429, "Too Many", {}, io.BytesIO(b""))
+        with (
+            mock.patch.object(fetch, "_open", side_effect=err),
+            self.assertRaises(fetch.RateLimited),
+        ):
+            fetch.get("https://api.github.com/x", tok="t")

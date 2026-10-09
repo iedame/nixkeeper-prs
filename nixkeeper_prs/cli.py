@@ -10,7 +10,7 @@ digest of nixpkgs' open PRs to DATA_DIR (default data/):
 The PRs' details: a full sweep the first time and every FULL_EVERY (about
 an hour: GitHub takes seconds a page), else the last digest's, with the
 details of those changed since read again (a light list of every open PR,
-minutes). Diffs are read from github.com one a second, at most MAX_DIFFS
+minutes). Diffs are read through GitHub's REST API one a second, at most MAX_DIFFS
 and MAX_MINUTES after the PRs are known (the first runs read the backlog),
 small PRs only."""
 
@@ -74,7 +74,7 @@ def write_json(path, data, indent=None):
         f.write("\n")
 
 
-def read_diffs(prs, cache, started):
+def read_diffs(prs, cache, started, tok):
     """Fingerprint the diffs of the PRs not read at their head commit yet
     (cache: {number: [head, fingerprint]}, updated in place; PRs no longer
     open dropped), the newest first, within MAX_DIFFS and MAX_MINUTES.
@@ -94,10 +94,14 @@ def read_diffs(prs, cache, started):
         if time.monotonic() - started > MAX_MINUTES * 60:
             break
         if in_a_row >= MAX_FAILURES_IN_A_ROW:
-            print("::warning::github.com stopped answering for diffs.", file=sys.stderr)
+            print("::warning::GitHub stopped answering for diffs.", file=sys.stderr)
             break
         try:
-            cache[str(pr["n"])] = [pr["head"], github.diff_hash(github.diff(pr["n"]))]
+            body = github.diff(pr["n"], tok)
+            cache[str(pr["n"])] = [pr["head"], github.diff_hash(body)]
+        except fetch.RateLimited as e:
+            print(f"::warning::{e}: the rest wait for the next run.", file=sys.stderr)
+            break
         except OSError as e:
             print(f"  #{pr['n']}: {e}", file=sys.stderr)
             in_a_row += 1
@@ -148,11 +152,9 @@ def main(argv=None):
     last = read_json(os.path.join(directory, "prs.json"), {})
     last_meta = read_json(os.path.join(directory, "meta.json"), {})
     print("Reading nixpkgs' open PRs...", file=sys.stderr)
+    tok = fetch.token()
     prs, how, total = sweep(
-        last.get("prs"),
-        last_meta.get("fullSweepAt"),
-        datetime.fromisoformat(now),
-        fetch.token(),
+        last.get("prs"), last_meta.get("fullSweepAt"), datetime.fromisoformat(now), tok
     )
     swept_at = now if how == "full" else last_meta.get("fullSweepAt")
     print(
@@ -170,15 +172,17 @@ def main(argv=None):
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})
     # The diffs' time starts now, whatever the PRs took.
-    read, pending = read_diffs(prs, cache, time.monotonic())
+    read, pending = read_diffs(prs, cache, time.monotonic(), tok)
     hashes = {int(n): h for n, (head, h) in cache.items()}
     prs, groups = facts.analyse(prs, index, master, queue, hashes)
 
+    # When the digest is written (now: when the PRs were read, fullSweepAt's).
+    written = datetime.now(UTC).isoformat(timespec="seconds")
     counts = Counter(b for pr in prs for b in pr["buckets"])
     states = Counter(pr["state"] for pr in prs if pr.get("state"))
     meta = {
         "format": FORMAT,
-        "generatedAt": now,
+        "generatedAt": written,
         "fullSweepAt": swept_at,
         "sweep": how,
         "prs": len(prs),
@@ -195,7 +199,7 @@ def main(argv=None):
     write_json(os.path.join(directory, "diffs.json"), cache)
     write_json(
         os.path.join(directory, "prs.json"),
-        {"format": FORMAT, "generatedAt": now, "prs": prs, "groups": groups},
+        {"format": FORMAT, "generatedAt": written, "prs": prs, "groups": groups},
     )
     write_json(os.path.join(directory, "meta.json"), meta, indent=2)
     print(json.dumps(meta, indent=2))

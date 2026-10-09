@@ -70,10 +70,13 @@ On the `data` branch:
   the update bot's queue from
   [nixkeeper-updates](https://github.com/iedame/nixkeeper-updates)'.
   Versions are ordered as nixkeeper orders them (its code, a flake input).
-- Diffs from github.com (`pull/N.diff`), one a second, at most 1,500 and
-  40 minutes a run, counted from when the PRs are known; the most recently
-  updated first, small PRs only (at most 50 files and 2,000 lines): the
-  first runs read the backlog.
+- Diffs through GitHub's REST API (`pulls/N` as a diff), with the same
+  token (its 5,000 requests an hour, apart from GraphQL's points; github.com's
+  `pull/N.diff` answers 429 to GitHub Actions after a few dozen), one a
+  second, at most 1,500 and 40 minutes a run, counted from when the PRs are
+  known; the most recently updated first, small PRs only (at most 50 files
+  and 2,000 lines): the first runs read the backlog. Told it's too many,
+  a run stops asking and leaves the rest for the next.
 
 Every request is one at a time, at most one a second, with a User-Agent
 naming this repository.

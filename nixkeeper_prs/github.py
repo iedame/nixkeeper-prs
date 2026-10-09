@@ -163,7 +163,11 @@ def details(numbers, tok):
     return found
 
 
-DIFF_URL = "https://github.com/NixOS/nixpkgs/pull/{n}.diff"
+# A PR's diff through the REST API, with the token: github.com's
+# pull/N.diff answers 429 to GitHub Actions' addresses after a few dozen
+# (2026-10-09). One request each, within the token's 5,000 an hour.
+DIFF_URL = "https://api.github.com/repos/NixOS/nixpkgs/pulls/{n}"
+DIFF_TYPE = "application/vnd.github.diff"
 # What changes between two copies of the same diff: the blob ids ("index
 # 1a2b..3c4d 100644") and where the hunks fall ("@@ -12,7 +12,7 @@"), which
 # move with the base the PR was made on.
@@ -178,7 +182,6 @@ def diff_hash(diff):
     return hashlib.sha256(normal).hexdigest()[:16]
 
 
-def diff(n):
-    """PR n's diff (bytes), from github.com (not the API: no token, no
-    limit of its own beyond fetch's pace)."""
-    return fetch.get(DIFF_URL.format(n=n))
+def diff(n, tok):
+    """PR n's diff (bytes), through GitHub's REST API."""
+    return fetch.get(DIFF_URL.format(n=n), accept=DIFF_TYPE, tok=tok)
