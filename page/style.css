@@ -110,6 +110,18 @@ th {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+tr.group td {
+  padding-top: 14px;
+  border-bottom: 2px solid var(--line);
+  color: var(--faint);
+}
+tr.group .mono {
+  font-family: ui-monospace, monospace;
+  color: var(--ink);
+}
+tr.group b {
+  color: var(--ink);
+}
 tr.draft {
   opacity: 0.6;
 }

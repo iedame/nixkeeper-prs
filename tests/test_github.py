@@ -131,10 +131,23 @@ class Sources(unittest.TestCase):
             self.assertEqual(sources.master(index), {"wesnoth": "1.18.9"})
 
     def test_queue(self):
-        body = {"queue": {"unciv": {"candidates": [["4.22.5", "4.22.7", "url"]]}}}
+        body = {
+            "updatedAt": "2026-10-08T00:00:00+00:00",
+            "cycleDays": 10,
+            "positions": 1000,
+            "queue": {
+                "unciv": {
+                    "position": 400,
+                    "candidates": [["4.22.5", "4.22.7", "url"]],
+                }
+            },
+        }
         data = gzip.compress(json.dumps(body).encode())
         with mock.patch.object(fetch, "get", return_value=data):
-            self.assertEqual(sources.queue(), {"unciv": [["4.22.5", "4.22.7"]]})
+            self.assertEqual(
+                sources.queue(),
+                {"unciv": {"candidates": [["4.22.5", "4.22.7"]], "by": "2026-10-12"}},
+            )
 
     def test_alias(self):
         self.assertEqual(

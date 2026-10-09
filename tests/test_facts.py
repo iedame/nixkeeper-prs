@@ -57,12 +57,13 @@ class UpdateState(unittest.TestCase):
 
 
 class Bot(unittest.TestCase):
-    QUEUE = {"foo": [["1.0", "1.1"]]}
+    QUEUE = {"foo": {"candidates": [["1.0", "1.1"]], "by": "2026-10-12"}}
 
     def test_a_persons_pr_with_the_bots_title(self):
         p = pr(1, "foo: 1.0 -> 1.1")
         self.assertEqual(
-            facts.blocks_bot(p, "foo", "1.0", "1.1", self.QUEUE), "foo: 1.0 -> 1.1"
+            facts.blocks_bot(p, "foo", "1.0", "1.1", self.QUEUE),
+            {"title": "foo: 1.0 -> 1.1", "by": "2026-10-12"},
         )
         # Another version: the bot's search doesn't find it.
         self.assertIsNone(facts.blocks_bot(p, "foo", "1.0", "1.2", self.QUEUE))
@@ -106,9 +107,11 @@ class Analyse(unittest.TestCase):
             pr(5, "docs: typo", files=["doc/manual.md"]),
         ]
         hashes = {3: "aa", 5: "aa"}
-        found, groups = facts.analyse(prs, INDEX, {}, {"foo": [["1.0", "1.1"]]}, hashes)
+        found, groups = facts.analyse(
+            prs, INDEX, {}, {"foo": {"candidates": [["1.0", "1.1"]]}}, hashes
+        )
         by_n = {p["n"]: p for p in found}
-        self.assertEqual(by_n[1]["blocksBot"], "foo: 1.0 -> 1.1")
+        self.assertEqual(by_n[1]["blocksBot"], {"title": "foo: 1.0 -> 1.1"})
         self.assertEqual(by_n[3]["state"], "superseded")
         self.assertEqual(by_n[4]["state"], "superseded")
         self.assertIn("by-name", by_n[1]["buckets"])

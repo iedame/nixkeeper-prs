@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+from datetime import datetime, timedelta
 
 from . import fetch
 
@@ -76,10 +77,23 @@ def master(index, url=HYDRA_DIGEST_URL):
 
 
 def queue(url=QUEUE_URL):
-    """{attribute: [[from, to], ...]}: what the update bot would update each
-    package to next (nixkeeper-updates' queue)."""
+    """{attribute: {"candidates": [[from, to], ...], "by": day}}: what the
+    update bot would update each package to next, and the day it's expected
+    to try (nixkeeper-updates' queue: a package at position p is tried about
+    p / positions × cycleDays after the queue was made)."""
     data = json.loads(gzip.decompress(fetch.get(url)))
-    return {
-        attr: [[c[0], c[1]] for c in entry.get("candidates") or [] if len(c) >= 2]
-        for attr, entry in (data.get("queue") or {}).items()
-    }
+    made = data.get("updatedAt")
+    cycle, positions = data.get("cycleDays"), data.get("positions")
+    found = {}
+    for attr, entry in (data.get("queue") or {}).items():
+        item = {
+            "candidates": [
+                [c[0], c[1]] for c in entry.get("candidates") or [] if len(c) >= 2
+            ]
+        }
+        if made and cycle and positions and entry.get("position") is not None:
+            days = entry["position"] / positions * cycle
+            when = datetime.fromisoformat(made) + timedelta(days=days)
+            item["by"] = when.date().isoformat()
+        found[attr] = item
+    return found

@@ -55,7 +55,9 @@ let prs = [];
 const duplicateOf = new Map(); // PR number -> its groups
 let view = 'all';
 let shown = 0;
-let list = [];
+let list = []; // PRs, and in the duplicates view {group} headings among them
+let groups = [];
+const byNumber = new Map();
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
@@ -63,6 +65,8 @@ const esc = (s) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
+const shortDay = (day) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const ago = (iso) => {
   const days = Math.floor((Date.now() - new Date(iso)) / 86400e3);
   return days < 1 ? 'today' : days < 60 ? `${days} d` : `${Math.floor(days / 30)} mo`;
@@ -74,20 +78,26 @@ function readFilters() {
   $('q').value = params.get('q') || '';
   $('maintainer').value = params.get('maintainer') || '';
   $('bucket').value = params.get('bucket') || '';
+  $('sort').value = params.get('sort') || '';
   $('hideDrafts').checked = params.get('drafts') !== 'shown';
 }
 
 function writeFilters() {
   const params = new URLSearchParams();
   if (view !== 'all') params.set('view', view);
-  for (const id of ['q', 'maintainer', 'bucket']) if ($(id).value) params.set(id, $(id).value);
+  for (const id of ['q', 'maintainer', 'bucket', 'sort'])
+    if ($(id).value) params.set(id, $(id).value);
   if (!$('hideDrafts').checked) params.set('drafts', 'shown');
   const query = params.toString();
   history.replaceState(null, '', location.pathname + (query ? `?${query}` : ''));
 }
 
 function matches(p) {
-  if (!VIEWS[view].test(p)) return false;
+  return VIEWS[view].test(p) && filtered(p);
+}
+
+// The filters but the view's own test (a duplicate group's members).
+function filtered(p) {
   if ($('hideDrafts').checked && p.draft) return false;
   const bucket = $('bucket').value;
   if (bucket && !p.buckets.includes(bucket)) return false;
@@ -115,10 +125,12 @@ function facts(p) {
       `<span class="fact warn" title="${esc(`${u.attr}: ${u.from} -> ${u.to}; nixpkgs has ${u.now}`)}">${p.state} (has ${esc(u.now)})</span>`,
     );
   }
-  if (p.blocksBot)
+  if (p.blocksBot) {
+    const by = p.blocksBot.by;
     out.push(
-      '<span class="fact warn" title="The update bot skips this update while it\'s open">blocks the bot</span>',
+      `<span class="fact warn" title="The update bot skips this update while it's open${by ? `; its next try is expected around ${esc(by)}` : ''}">blocks the bot${by ? ` (bot ~${esc(shortDay(by))})` : ''}</span>`,
     );
+  }
   for (const g of duplicateOf.get(p.n) || []) {
     const others = g.prs.filter((n) => n !== p.n);
     out.push(
@@ -140,6 +152,29 @@ function facts(p) {
 
 const CI = { SUCCESS: '✓', FAILURE: '✗', ERROR: '✗', PENDING: '…', EXPECTED: '…' };
 
+// The orders of the sort switch; '' is the view's usual: the bot's next
+// try first for "Blocking the bot", else the oldest update first (what's
+// been waiting longest).
+const SORTS = {
+  updated: (a, b) => a.updated.localeCompare(b.updated),
+  recent: (a, b) => b.updated.localeCompare(a.updated),
+  created: (a, b) => a.created.localeCompare(b.created),
+  small: (a, b) => a.additions + a.deletions - (b.additions + b.deletions),
+  bot: (a, b) =>
+    (a.blocksBot?.by || '9999').localeCompare(b.blocksBot?.by || '9999') ||
+    a.updated.localeCompare(b.updated),
+};
+const order = () => SORTS[$('sort').value] || (view === 'blocksBot' ? SORTS.bot : SORTS.updated);
+
+// A duplicate group's heading row: what its PRs share, and how many.
+function groupRow(g) {
+  const what =
+    g.kind === 'sameDiff'
+      ? 'with the same diff'
+      : `open for the same package: <span class="mono">${esc(g.key)}</span>`;
+  return `<tr class="group"><td colspan="7"><b>${g.members.length} PRs</b> ${what}</td></tr>`;
+}
+
 function row(p) {
   return `<tr${p.draft ? ' class="draft"' : ''}>
     <td class="num"><a href="${PR_URL}${p.n}">#${p.n}</a><br><a class="alt" href="${GHDIFF_URL}${p.n}" title="Review it on ghdiff.com">ghdiff</a></td>
@@ -154,7 +189,10 @@ function row(p) {
 
 function drawMore() {
   const next = list.slice(shown, shown + STEP);
-  $('rows').insertAdjacentHTML('beforeend', next.map(row).join(''));
+  $('rows').insertAdjacentHTML(
+    'beforeend',
+    next.map((item) => (item.group ? groupRow(item.group) : row(item))).join(''),
+  );
   shown += next.length;
   $('more').textContent = shown < list.length ? `Showing ${shown} of ${list.length}…` : '';
 }
@@ -163,10 +201,27 @@ function render() {
   writeFilters();
   for (const b of $('views').querySelectorAll('button'))
     b.setAttribute('aria-pressed', b.dataset.view === view);
-  list = prs.filter(matches);
-  // Oldest update first: what's been waiting longest.
-  list.sort((a, b) => a.updated.localeCompare(b.updated));
-  $('count').textContent = `${list.length.toLocaleString()} PRs`;
+  if (view === 'duplicates') {
+    // Each group together, under its heading: the biggest first, then the
+    // one waiting longest; its members in the sort's order. A group needs
+    // two members left by the filters.
+    const sort = order();
+    const found = groups
+      .map((g) => ({
+        ...g,
+        members: g.prs.map((n) => byNumber.get(n)).filter((p) => p && filtered(p)),
+      }))
+      .filter((g) => g.members.length > 1)
+      .map((g) => ({ ...g, members: g.members.sort(sort) }))
+      .sort((a, b) => b.members.length - a.members.length || sort(a.members[0], b.members[0]));
+    list = found.flatMap((g) => [{ group: g }, ...g.members]);
+    const prCount = new Set(found.flatMap((g) => g.members.map((p) => p.n))).size;
+    $('count').textContent =
+      `${found.length.toLocaleString()} groups, ${prCount.toLocaleString()} PRs`;
+  } else {
+    list = prs.filter(matches).sort(order());
+    $('count').textContent = `${list.length.toLocaleString()} PRs`;
+  }
   $('rows').innerHTML = '';
   shown = 0;
   drawMore();
@@ -184,6 +239,10 @@ async function main() {
     return;
   }
   prs = data.prs;
+  groups = data.groups;
+  for (const p of prs) byNumber.set(p.n, p);
+  // Digests from before 2026-10-09 said only the bot's title.
+  for (const p of prs) if (typeof p.blocksBot === 'string') p.blocksBot = { title: p.blocksBot };
   for (const g of data.groups)
     for (const n of g.prs) duplicateOf.set(n, [...(duplicateOf.get(n) || []), g]);
   $('status').textContent =

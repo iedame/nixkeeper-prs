@@ -95,14 +95,19 @@ def update_state(frm, to, now):
 
 
 def blocks_bot(pr, attr, frm, to, queue):
-    """The bot's title this PR has, when the update bot would make that very
-    update next (its queue) and this PR isn't the bot's own: the bot then
-    finds it and skips the update ("There might already be an open PR")."""
+    """When the update bot would make this very update next (its queue) and
+    this PR, not the bot's own, has its title: the bot then finds it and
+    skips the update ("There might already be an open PR"). {"title", "by":
+    the day the bot is expected to try} or None."""
     if pr["author"] == BOT or not attr:
         return None
-    for want_from, want_to in queue.get(attr) or []:
+    entry = queue.get(attr) or {}
+    for want_from, want_to in entry.get("candidates") or []:
         if (want_from, want_to) == (frm, to):
-            return f"{attr}: {frm} -> {to}"
+            found = {"title": f"{attr}: {frm} -> {to}"}
+            if entry.get("by"):
+                found["by"] = entry["by"]
+            return found
     return None
 
 
@@ -151,8 +156,8 @@ def analyse(prs, index, master, queue, hashes):
             facts["update"] = {"attr": attr, "from": frm, "to": to, "now": now}
             if state := update_state(frm, to, now):
                 facts["state"] = state
-            if title := blocks_bot(pr, target, frm, to, queue):
-                facts["blocksBot"] = title
+            if blocking := blocks_bot(pr, target, frm, to, queue):
+                facts["blocksBot"] = blocking
         if mb := merge_bot(pr, only, packages, index):
             facts["mergeBot"] = mb
         pr.update(facts)
