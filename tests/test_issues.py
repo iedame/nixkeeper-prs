@@ -1,6 +1,7 @@
 """Build-failure issues against Hydra's builds (issues.py)."""
 
 import unittest
+from unittest import mock
 
 from nixkeeper_prs import issues, sources
 
@@ -123,6 +124,40 @@ class NoJob(unittest.TestCase):
         self.assertEqual(self.aliases["renamed"]["tbb_2022"], "onetbb")
         self.assertEqual(self.aliases["renamed"]["oldname"], "logcheck")
         self.assertNotIn("nothing", self.aliases["renamed"])
+
+    def test_python_aliases_under_the_current_set(self):
+        python_nix = """lib: self: super:
+let
+  checkInPkgs = n: alias: if builtins.hasAttr n super then throw "x" else alias;
+in
+mapAliases {
+  pytorch-pfn-extras = throw "pytorch-pfn-extras was removed: unmaintained";
+  iterfzf2 = iterfzf; # added 2025-01-01
+}
+"""
+        texts = {
+            sources.ALIASES_URL: ALIASES_NIX,
+            sources.PYTHON_ALIASES_URL: python_nix,
+        }
+        with mock.patch.object(
+            sources.fetch, "get", side_effect=lambda url, *a, **k: texts[url].encode()
+        ):
+            aliases = sources.aliases()
+        self.assertNotIn("python313packages.checkinpkgs", aliases["renamed"])
+        self.assertEqual(
+            aliases["renamed"]["python313packages.iterfzf2"],
+            "python313packages.iterfzf",
+        )
+        # Whichever Python's set the title names.
+        for title in (
+            "Build failure: python310Packages.pytorch-pfn-extras",
+            "Build failure: python3Packages.pytorch-pfn-extras",
+        ):
+            found = issues.check(title, JOBS, {}, aliases)
+            self.assertEqual(
+                (found["verdict"], found["reason"]),
+                ("removed", "pytorch-pfn-extras was removed: unmaintained"),
+            )
 
     def test_removed_with_its_reason(self):
         found = self.verdict("Build failure: networkmanager-vpnc")

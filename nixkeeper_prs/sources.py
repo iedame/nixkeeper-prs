@@ -36,6 +36,14 @@ ALIASES_URL = os.environ.get(
     "NIXKEEPER_PRS_ALIASES",
     "https://raw.githubusercontent.com/NixOS/nixpkgs/master/pkgs/top-level/aliases.nix",
 )
+# The Python package set's own aliases (python3Packages.foo), in a
+# mapAliases { ... } block, named within the set.
+PYTHON_ALIASES_URL = os.environ.get(
+    "NIXKEEPER_PRS_PYTHON_ALIASES",
+    "https://raw.githubusercontent.com/NixOS/nixpkgs/master/pkgs/top-level/python-aliases.nix",
+)
+# The Python set its aliases are kept under (as rows are named).
+PYTHON_SET = "python313packages."
 # Titles name Python packages by their alias (python3Packages.foo), the index
 # by the versioned set it points to.
 ALIASES = ((re.compile(r"^python3Packages\."), "python313Packages."),)
@@ -89,12 +97,28 @@ THROW = re.compile(r'^throw\s*"((?:[^"\\]|\\.)*)"?')
 TARGET = re.compile(r"([A-Za-z_][\w.+-]*)\s*$")
 
 
-def aliases(url=ALIASES_URL):
-    """nixpkgs' aliases.nix read for what it says of each name: {"removed":
-    {name in lower case: the reason its throw gives}, "renamed": {name in
-    lower case: the new attribute}}. A reading of the Nix file's lines, not
-    an evaluation: what doesn't look like either is left out."""
-    return parse_aliases(fetch.get(url).decode())
+def aliases(url=ALIASES_URL, python_url=PYTHON_ALIASES_URL):
+    """nixpkgs' aliases.nix and python-aliases.nix read for what they say of
+    each name: {"removed": {name in lower case: the reason its throw
+    gives}, "renamed": {name in lower case: the new attribute}}, the Python
+    set's under PYTHON_SET (python313packages.foo). A reading of the Nix
+    files' lines, not an evaluation: what doesn't look like either is left
+    out."""
+    found = parse_aliases(fetch.get(url).decode())
+    python = parse_aliases(python_block(fetch.get(python_url).decode()))
+    for kind in ("removed", "renamed"):
+        for name, value in python[kind].items():
+            if kind == "renamed":
+                value = PYTHON_SET + value
+            found[kind].setdefault(PYTHON_SET + name, value)
+    return found
+
+
+def python_block(text):
+    """python-aliases.nix's mapAliases { ... } block: its entries, not the
+    helper functions before it."""
+    start = text.find("mapAliases {")
+    return text[start + len("mapAliases {") :] if start >= 0 else ""
 
 
 def parse_aliases(text):
