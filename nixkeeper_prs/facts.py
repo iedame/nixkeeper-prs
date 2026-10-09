@@ -159,9 +159,36 @@ def merge_bot(pr, only_by_name, packages, index):
     return found
 
 
-def analyse(prs, index, master, queue, known):
+def hydra_failing(names, jobs):
+    """{package: {system: reason}} of the packages named (a PR's) whose
+    build fails on Hydra now (jobs: sources.jobs'; reason "" when
+    nixkeeper-hydra hasn't one): a PR touching one may be its fix."""
+    found = {}
+    for name in sorted(names):
+        failed = {
+            system: job.get("reason") or ""
+            for system, job in (jobs.get(name.lower()) or {}).items()
+            if job["status"] == "failed"
+        }
+        if failed:
+            found[name] = failed
+    return found
+
+
+def already_in(attr, index, master):
+    """{"attr", "version"} when an init PR's attribute is in nixpkgs already
+    (the channel's index, or master: built by Hydra): added some other way
+    while the PR waited. None else."""
+    version = master.get(attr) or (index.get(attr) or {}).get("version")
+    if attr in master or attr in index:
+        return {"attr": attr, "version": version or ""}
+    return None
+
+
+def analyse(prs, index, master, queue, known, jobs=None):
     """Each PR with what it is (buckets, title parts, packages,
-    maintainers, update state, bot blocking, merge bot), and the groups of
+    maintainers, update state, bot blocking, merge bot, an init's package
+    already in nixpkgs, its packages failing on Hydra), and the groups of
     duplicates: the same diff (known: {number: (fingerprint, diff facts)},
     diffs.facts'), the same change (only its changed lines), or several
     open PRs for the same attribute. Returns the PRs and the groups."""
@@ -190,6 +217,11 @@ def analyse(prs, index, master, queue, known):
                 facts["blocksBot"] = blocking
         if mb := merge_bot(pr, only, packages, index):
             facts["mergeBot"] = mb
+        if kind == "init" and (there := already_in(target, index, master)):
+            facts["alreadyIn"] = there
+        touched = set(packages) | ({target} if target and kind != "init" else set())
+        if failing := hydra_failing(touched, jobs or {}):
+            facts["hydraFailing"] = failing
         pr.update(facts)
         if pr["n"] in known:
             h, seen = known[pr["n"]]

@@ -134,14 +134,34 @@ def plain(version):
     return re.sub(r"^[vV](?=\d)", "", version.strip("`'\".,;:()[]"))
 
 
-def check_update(title, index, names, master, open_updates):
+def bot_reaches(queue, attr, to):
+    """{"to", "by"?} when the update bot's queue (sources.queue's) has the
+    version asked, or newer, for attr: the bot would update it on its next
+    try (by: the day expected). The queue's candidates are Repology's, so a
+    project Repology mismatched gives a wrong one now and then."""
+    entry = (queue or {}).get(attr) or {}
+    reaching = [
+        c[1]
+        for c in entry.get("candidates") or []
+        if DIGIT.search(c[1]) and nixversions.compare(plain(c[1]), to) >= 0
+    ]
+    if not reaching:
+        return None
+    found = {"to": reaching[-1]}
+    if entry.get("by"):
+        found["by"] = entry["by"]
+    return found
+
+
+def check_update(title, index, names, master, open_updates, queue=None):
     """What nixpkgs has of an update request: None for other titles, else
-    {"package", "from", "to", "verdict", "now"?, "prs"?}. verdict (by Nix's
+    {"package", "from", "to", "verdict", "now"?, "prs"?, "bot"?}. verdict (by Nix's
     order): "done" (nixpkgs has to, or newer: a candidate to close),
     "partly" (moved past from, not up to to), "open", "notFound" (no
     package by that name), "notVersion" (to isn't a version: "unstable?").
     now: master's version, else the channel's; prs: open update PRs for
-    the package (open_updates: {attribute in lower case: [numbers]}).
+    the package (open_updates: {attribute in lower case: [numbers]}); bot:
+    when not done, the update bot's next try reaches it (bot_reaches').
     names: {attribute in lower case: attribute} of the index."""
     m = UPDATE_REQUEST.match(title)
     if not m:
@@ -166,4 +186,6 @@ def check_update(title, index, names, master, open_updates):
         found["verdict"] = "partly"
     else:
         found["verdict"] = "open"
+    if found["verdict"] != "done" and (bot := bot_reaches(queue, attr, to)):
+        found["bot"] = bot
     return found

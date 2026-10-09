@@ -39,6 +39,14 @@ On the `data` branch:
   - `blocksBot`: the title the update bot would use for its next update of
     that package (nixkeeper-updates' queue), when this PR, not the bot's,
     has it: the bot finds it and skips the update
+  - `alreadyIn`: an init PR whose attribute nixpkgs has now (the channel's
+    index, or master by Hydra's builds): `attr` and `version`; added some
+    other way while the PR waited, so a candidate to close
+  - `hydraFailing`: the packages it touches (its `pkgs/by-name`
+    directories, and an update's or drop's title attribute) whose build
+    fails on Hydra now, `{package: {system: reason}}` (the reason from
+    nixkeeper-hydra's digest, "" without one): maybe their fix. A PR
+    touching many packages can match one in passing
   - `mergeBot`: when a maintainer can merge it with the
     [merge bot](https://github.com/NixOS/nixpkgs/blob/master/ci/README.md#nixpkgs-merge-bot):
     nixpkgs' CI labels it `2.status: merge-bot eligible` (it knows who's a
@@ -68,7 +76,8 @@ On the `data` branch:
   merge-bot eligible and ready, the groups, the diffs read, and the issues
   and merged PRs listed (`issues`, `merged`: how many and when, and
   `issues.buildFailures` and `issues.updateRequests`: those issues by
-  verdict; a
+  verdict, `issues.updateRequestsTheBotReaches`; `alreadyIn` and
+  `hydraFailing`: how many PRs have each; a
   listing that failed keeps the last one, its time saying so).
 - [`data/issues.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/issues.json):
   every open issue's number and title (`issues`: `[{"n", "title",
@@ -88,8 +97,12 @@ On the `data` branch:
   any number), `now` (master's version, else the channel's), `verdict` by
   Nix's order (`done`: nixpkgs has `to` or newer, a candidate to close;
   `partly`: moved past `from`, not up to `to`; `open`; `notFound`: no
-  package by that name; `notVersion`: `to` isn't a version), and `prs`: the
-  open update PRs for that package.
+  package by that name; `notVersion`: `to` isn't a version), `prs`: the
+  open update PRs for that package, and `bot` when it isn't done and the
+  update bot's queue (nixkeeper-updates') has `to` or newer for it: `to`
+  (the bot's version) and `by` (the day its next try is expected). The
+  queue's versions are Repology's, which now and then matches another
+  project of the same name.
 - [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel

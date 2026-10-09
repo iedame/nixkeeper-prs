@@ -137,6 +137,18 @@ const VIEWS = {
     title: 'Updates another update overtook (nixpkgs moved, not up to their version): to rebase',
     test: (p) => p.state === 'overtaken',
   },
+  alreadyIn: {
+    label: 'Already in nixpkgs',
+    title:
+      'Init PRs for an attribute nixpkgs has now (added some other way while they waited): to close',
+    test: (p) => p.alreadyIn,
+  },
+  hydraFailing: {
+    label: 'Touches a Hydra failure',
+    title:
+      "PRs touching a package whose build fails on Hydra now (with the log's reason): maybe its fix",
+    test: (p) => p.hydraFailing,
+  },
   blocksBot: {
     label: 'Blocking the bot',
     title: 'PRs with the very title the update bot would use next: it skips that update',
@@ -270,6 +282,18 @@ function facts(p) {
       `<span class="fact warn" title="${esc(`${u.attr}: ${u.from} -> ${u.to}; nixpkgs has ${u.now}`)}">${esc(STATES[p.state] || p.state)}${['superseded', 'overtaken'].includes(p.state) ? ` (has ${esc(u.now)})` : ''}</span>`,
     );
   }
+  if (p.alreadyIn)
+    out.push(
+      `<span class="fact warn" title="nixpkgs has ${esc(p.alreadyIn.attr)} already">already in nixpkgs${p.alreadyIn.version ? ` (${esc(p.alreadyIn.version)})` : ''}</span>`,
+    );
+  for (const [pkg, systems] of Object.entries(p.hydraFailing || {}))
+    out.push(
+      `<span class="fact bad" title="${esc(
+        Object.entries(systems)
+          .map(([system, reason]) => `${system}: ${reason || 'failed'}`)
+          .join('; '),
+      )}">fails on Hydra: <a href="${HYDRA_JOB}${encodeURIComponent(`${pkg}.${Object.keys(systems)[0]}`)}">${esc(pkg)}</a></span>`,
+    );
   if (p.blocksBot) {
     const by = p.blocksBot.by;
     out.push(
@@ -527,12 +551,16 @@ function updateCell(i) {
     notFound: '<span class="buckets">no package by that name</span>',
     notVersion: '<span class="buckets">not a version asked</span>',
   }[u.verdict];
-  return `${said || esc(u.verdict)}${has}${prs ? ` · PR ${prs}` : ''}`;
+  const bot = u.bot
+    ? ` · <span class="fact" title="The update bot's queue has ${esc(u.bot.to)}: it updates this on its next try${u.bot.by ? `, expected around ${esc(u.bot.by)}` : ''}">bot: ${esc(u.bot.to)}${u.bot.by ? ` ~${esc(shortDay(u.bot.by))}` : ''}</span>`
+    : '';
+  return `${said || esc(u.verdict)}${has}${prs ? ` · PR ${prs}` : ''}${bot}`;
 }
 const HYDRA_FILTERS = {
   updDone: (_, u) => u?.verdict === 'done',
   updPr: (_, u) => u?.verdict !== 'done' && (u?.prs || []).length > 0,
   updOpen: (_, u) => u?.verdict === 'open' && !(u.prs || []).length,
+  updBot: (_, u) => u?.verdict !== 'done' && !!u?.bot,
   updPartly: (_, u) => u?.verdict === 'partly',
   close: (h) => h?.verdict === 'builds' && !h.condition,
   condition: (h) => h?.verdict === 'builds' && h.condition,
