@@ -108,13 +108,31 @@ class Diffs(unittest.TestCase):
                 "deletions": 0,
             },
         ]
-        cache = {"1": ["x", "aa"], "99": ["gone", "bb"]}
+        cache = {"1": ["x", "aa", {"change": "c"}], "99": ["gone", "bb", {}]}
         with mock.patch.object(github, "diff", return_value=self.A) as got:
             read, pending = cli.read_diffs(prs, cache, time.monotonic(), "t")
         got.assert_called_once_with(2, "t")  # 1 read at its head, 3 too big
         self.assertEqual((read, pending), (1, 0))
         self.assertNotIn("99", cache)  # no longer open
         self.assertEqual(cache["2"][0], "y")
+        self.assertIn("change", cache["2"][2])  # its facts, read with it
+
+    def test_read_again_for_their_facts(self):
+        """A diff read before facts were kept: read again at the same head."""
+        prs = [
+            {
+                "n": 1,
+                "head": "x",
+                "updated": "2026-10-01",
+                "changedFiles": 1,
+                "additions": 1,
+                "deletions": 1,
+            }
+        ]
+        cache = {"1": ["x", "aa"]}
+        with mock.patch.object(github, "diff", return_value=self.A):
+            cli.read_diffs(prs, cache, time.monotonic(), "t")
+        self.assertEqual(len(cache["1"]), 3)
 
 
 class Sources(unittest.TestCase):

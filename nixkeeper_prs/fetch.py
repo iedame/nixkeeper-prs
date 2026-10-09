@@ -66,6 +66,7 @@ def get(url, accept=None, tok=None):
         return _open(urllib.request.Request(url, headers=headers))
     except urllib.error.HTTPError as e:
         left = (e.headers or {}).get("x-ratelimit-remaining")
+        e.close()
         if e.code == 429 or (e.code == 403 and left == "0"):
             raise RateLimited(f"{url}: {e.code}, rate limited") from e
         raise

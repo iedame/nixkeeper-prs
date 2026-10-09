@@ -145,12 +145,13 @@ def merge_bot(pr, only_by_name, packages, index):
     return found
 
 
-def analyse(prs, index, master, queue, hashes):
+def analyse(prs, index, master, queue, known):
     """Each PR with what it is (buckets, title parts, packages,
     maintainers, update state, bot blocking, merge bot), and the groups of
-    duplicates: the same diff (hashes: {number: fingerprint}), or several
+    duplicates: the same diff (known: {number: (fingerprint, diff facts)},
+    diffs.facts'), the same change (only its changed lines), or several
     open PRs for the same attribute. Returns the PRs and the groups."""
-    by_hash, by_attr = {}, {}
+    by_hash, by_change, by_attr = {}, {}, {}
     for pr in prs:
         kind, attr, frm, to = title_parts(pr["title"])
         packages, only = by_name_packages(pr["files"])
@@ -176,14 +177,30 @@ def analyse(prs, index, master, queue, hashes):
         if mb := merge_bot(pr, only, packages, index):
             facts["mergeBot"] = mb
         pr.update(facts)
-        if h := hashes.get(pr["n"]):
+        if pr["n"] in known:
+            h, seen = known[pr["n"]]
             pr["diff"] = h
             by_hash.setdefault(h, []).append(pr["n"])
+            if seen:
+                pr["diffFacts"] = seen
+                by_change.setdefault(seen["change"], []).append(pr["n"])
+                if seen.get("versionOnly"):
+                    pr["buckets"].append("version-only")
+                if seen.get("cves"):
+                    pr["buckets"].append("cve")
         if attr and kind in ("update", "init"):
             by_attr.setdefault(target, []).append(pr["n"])
     groups = []
-    for kind, found in (("sameDiff", by_hash), ("samePackage", by_attr)):
-        for key, numbers in sorted(found.items()):
-            if len(numbers) > 1:
-                groups.append({"kind": kind, "key": key, "prs": sorted(numbers)})
+    exact = set()
+    for key, numbers in sorted(by_hash.items()):
+        if len(numbers) > 1:
+            groups.append({"kind": "sameDiff", "key": key, "prs": sorted(numbers)})
+            exact.add(tuple(sorted(numbers)))
+    for key, numbers in sorted(by_change.items()):
+        # Not when it's the very same group as a same-diff one.
+        if len(numbers) > 1 and tuple(sorted(numbers)) not in exact:
+            groups.append({"kind": "sameChange", "key": key, "prs": sorted(numbers)})
+    for key, numbers in sorted(by_attr.items()):
+        if len(numbers) > 1:
+            groups.append({"kind": "samePackage", "key": key, "prs": sorted(numbers)})
     return prs, groups

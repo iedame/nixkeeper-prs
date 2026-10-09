@@ -115,7 +115,12 @@ class Analyse(unittest.TestCase):
             pr(4, "python3Packages.baz: 0.4 -> 0.5"),  # by its alias
             pr(5, "docs: typo", files=["doc/manual.md"]),
         ]
-        hashes = {3: "aa", 5: "aa"}
+        hashes = {
+            3: ("aa", {"change": "c1", "versionOnly": True}),
+            5: ("aa", {"change": "c1", "cves": ["CVE-2026-1"]}),
+            1: ("bb", {"change": "c2"}),
+            2: ("cc", {"change": "c2"}),
+        }
         found, groups = facts.analyse(
             prs, INDEX, {}, {"foo": {"candidates": [["1.0", "1.1"]]}}, hashes
         )
@@ -126,10 +131,14 @@ class Analyse(unittest.TestCase):
         self.assertIn("by-name", by_n[1]["buckets"])
         self.assertIn("docs", by_n[5]["buckets"])
         self.assertEqual(by_n[1]["maintainers"], ["Alice", "bob"])
+        self.assertIn("version-only", by_n[3]["buckets"])
+        self.assertIn("cve", by_n[5]["buckets"])
+        # The same change only where it isn't the same group as a same diff.
         self.assertEqual(
             groups,
             [
                 {"kind": "sameDiff", "key": "aa", "prs": [3, 5]},
+                {"kind": "sameChange", "key": "c2", "prs": [1, 2]},
                 {"kind": "samePackage", "key": "foo", "prs": [1, 2]},
             ],
         )

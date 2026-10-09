@@ -3,8 +3,8 @@ digest of nixpkgs' open PRs to DATA_DIR (default data/):
 
     prs.json     every open PR with what it is and where it stands
                  (facts.analyse), and the groups of duplicates
-    diffs.json   each PR's diff fingerprint, by the head commit it was read
-                 at: read again only when the PR changes
+    diffs.json   each PR's diff fingerprint and facts (diffs.py), by the head
+                 commit it was read at: read again only when the PR changes
     meta.json    when, how many, and how many of each kind
 
 The PRs' details: a full sweep the first time and every FULL_EVERY (about
@@ -21,7 +21,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from . import facts, fetch, github, sources
+from . import diffs, facts, fetch, github, sources
 
 FORMAT = 1
 MAX_DIFFS = 1500
@@ -76,10 +76,16 @@ def write_json(path, data, indent=None):
         f.write("\n")
 
 
+def read_at(entry, head):
+    """Whether a cache entry is the diff at head, with its facts."""
+    return bool(entry) and len(entry) >= 3 and entry[0] == head
+
+
 def read_diffs(prs, cache, started, tok):
-    """Fingerprint the diffs of the PRs not read at their head commit yet
-    (cache: {number: [head, fingerprint]}, updated in place; PRs no longer
-    open dropped), the newest first, within MAX_DIFFS and MAX_MINUTES.
+    """Read the diffs of the PRs not read at their head commit yet (cache:
+    {number: [head, fingerprint, facts]}, updated in place; PRs no longer
+    open dropped; entries from before facts were kept, read again), the
+    newest first, within MAX_DIFFS and MAX_MINUTES.
     Returns how many were read and are still to read."""
     open_now = {str(pr["n"]) for pr in prs}
     for n in set(cache) - open_now:
@@ -89,7 +95,7 @@ def read_diffs(prs, cache, started, tok):
         for pr in sorted(prs, key=lambda p: p["updated"], reverse=True)
         if pr["changedFiles"] <= MAX_DIFF_FILES
         and pr["additions"] + pr["deletions"] <= MAX_DIFF_LINES
-        and (cache.get(str(pr["n"])) or [None])[0] != pr["head"]
+        and not read_at(cache.get(str(pr["n"])), pr["head"])
     ]
     read = in_a_row = 0
     for pr in wanted[:MAX_DIFFS]:
@@ -100,7 +106,11 @@ def read_diffs(prs, cache, started, tok):
             break
         try:
             body = github.diff(pr["n"], tok)
-            cache[str(pr["n"])] = [pr["head"], github.diff_hash(body)]
+            cache[str(pr["n"])] = [
+                pr["head"],
+                github.diff_hash(body),
+                diffs.facts(body),
+            ]
         except fetch.RateLimited as e:
             print(f"::warning::{e}: the rest wait for the next run.", file=sys.stderr)
             break
@@ -171,8 +181,13 @@ def main(argv=None):
     cache = read_json(os.path.join(directory, "diffs.json"), {})
     # The diffs' time starts now, whatever the PRs took.
     read, pending = read_diffs(prs, cache, time.monotonic(), tok)
-    hashes = {int(n): h for n, (head, h) in cache.items()}
-    prs, groups = facts.analyse(prs, index, master, queue, hashes)
+    # Each PR's fingerprint and facts, at the head read (a PR changed since
+    # keeps the last read's until its diff is read again).
+    known = {
+        int(n): (entry[1], entry[2] if len(entry) >= 3 else {})
+        for n, entry in cache.items()
+    }
+    prs, groups = facts.analyse(prs, index, master, queue, known)
 
     # When the digest is written (now: when the PRs were read, fullSweepAt's).
     written = datetime.now(UTC).isoformat(timespec="seconds")

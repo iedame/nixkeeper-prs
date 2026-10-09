@@ -43,14 +43,26 @@ On the `data` branch:
     `ready` (CI green) and the `maintainers` of every package it touches
   - `diff`: the fingerprint of its diff (blob ids and hunk positions left
     out: the same change made on another base is the same)
+  - `diffFacts`, read from its diff (`nixkeeper_prs/diffs.py`; a reading
+    of the text, not an evaluation): `change` (a fingerprint of the
+    changed lines only, no context), `versionOnly` (every changed line is
+    a version, hash or revision: a plain bump; also the `version-only`
+    bucket), `tags` (migrations in files that existed: `strictDeps`,
+    `structuredAttrs`, `revToTag`, `sriHash`, `dropWithLib`, `pyproject`,
+    `finalAttrs`, `updateScript`, `pythonImportsCheck`, `byName`), `cves`
+    (CVE ids in added lines; also the `cve` bucket), `hints` (in Nix files
+    it adds: `rec`, `withLib`, `revNotTag`, `oldHash`,
+    `noPythonImportsCheck`)
 
-  and `groups` of duplicates: `sameDiff` (the same fingerprint) and
-  `samePackage` (several open updates or inits of one attribute).
+  and `groups` of duplicates: `sameDiff` (the same fingerprint),
+  `sameChange` (the same changed lines with other context, when that's not
+  already a same-diff group) and `samePackage` (several open updates or
+  inits of one attribute).
 - [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, and the diffs read.
-- `data/diffs.json`: each PR's fingerprint by the head commit it was read
-  at, so a diff is read again only when the PR changes.
+- `data/diffs.json`: each PR's fingerprint and diff facts by the head
+  commit it was read at, so a diff is read again only when the PR changes.
 
 ## How it's made
 

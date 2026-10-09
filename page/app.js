@@ -35,6 +35,27 @@ function approvals(p) {
   return Math.max(m ? Number(m[1]) : 0, p.approvedBy.length);
 }
 
+// What its diff says (the digest's diffs.py), in words.
+const TAGS = {
+  strictDeps: 'adds strictDeps',
+  structuredAttrs: 'adds __structuredAttrs',
+  pyproject: 'pyproject = true',
+  finalAttrs: 'finalAttrs',
+  updateScript: 'adds an updateScript',
+  pythonImportsCheck: 'adds pythonImportsCheck',
+  revToTag: 'rev → tag',
+  sriHash: 'SRI hash',
+  dropWithLib: 'drops with lib',
+  byName: 'moves to by-name',
+};
+const HINTS = {
+  rec: 'uses rec',
+  withLib: 'uses with lib',
+  revNotTag: 'rev, not tag',
+  oldHash: 'old-style hash',
+  noPythonImportsCheck: 'no pythonImportsCheck',
+};
+
 // What to act on, each a test on a PR (groups: the digest's duplicates).
 const VIEWS = {
   all: { label: 'All open', test: () => true },
@@ -57,8 +78,9 @@ const VIEWS = {
   },
   security: {
     label: 'Security',
-    title: "nixpkgs' security severity label",
-    test: (p) => has(p, '1.severity: security'),
+    title:
+      "nixpkgs' security severity label, or a CVE named in what it adds (a patch named after one)",
+    test: (p) => has(p, '1.severity: security') || p.buckets.includes('cve'),
   },
   firstTime: {
     label: 'First-time, unreviewed',
@@ -110,6 +132,12 @@ const VIEWS = {
     label: 'Backwards',
     title: 'Updates whose new version sorts below the old: a downgrade, or a version scheme change',
     test: (p) => p.state === 'backwards',
+  },
+  versionOnly: {
+    label: 'Version bump only',
+    title:
+      'Every changed line is a version, hash or revision (read from its diff): the safest review there is',
+    test: (p) => p.buckets.includes('version-only'),
   },
   tiny: {
     label: 'Tiny',
@@ -213,11 +241,26 @@ function facts(p) {
   for (const g of duplicateOf.get(p.n) || []) {
     const others = g.prs.filter((n) => n !== p.n);
     out.push(
-      `<span class="fact" title="${g.kind === 'sameDiff' ? 'The same diff as' : `Also for ${esc(g.key)}:`} ${others.map((n) => `#${n}`).join(', ')}">${g.kind === 'sameDiff' ? 'same diff' : 'same package'}: ${others
+      `<span class="fact" title="${g.kind === 'samePackage' ? `Also for ${esc(g.key)}:` : 'The same change as'} ${others.map((n) => `#${n}`).join(', ')}">${{ sameDiff: 'same diff', sameChange: 'same change', samePackage: 'same package' }[g.kind]}: ${others
         .map((n) => `<a href="${PR_URL}${n}">#${n}</a>`)
         .join(' ')}</span>`,
     );
   }
+  const seen = p.diffFacts || {};
+  if (seen.versionOnly)
+    out.push(
+      '<span class="fact good" title="Only versions, hashes and revisions change">version bump only</span>',
+    );
+  for (const cve of seen.cves || [])
+    out.push(`<span class="fact bad" title="Named in what it adds">${esc(cve)}</span>`);
+  for (const tag of seen.tags || [])
+    out.push(
+      `<span class="fact" title="A migration it makes (from its diff)">${esc(TAGS[tag] || tag)}</span>`,
+    );
+  for (const hint of seen.hints || [])
+    out.push(
+      `<span class="fact warn" title="In a file it adds: worth asking">${esc(HINTS[hint] || hint)}</span>`,
+    );
   if (conflicts(p)) out.push('<span class="fact bad">conflicts</span>');
   if (has(p, '1.severity: security')) out.push('<span class="fact bad">security</span>');
   const r = rebuilds(p);
@@ -261,7 +304,9 @@ function groupRow(g) {
   const what =
     g.kind === 'sameDiff'
       ? 'with the same diff'
-      : `open for the same package: <span class="mono">${esc(g.key)}</span>`;
+      : g.kind === 'sameChange'
+        ? 'making the same change (other context)'
+        : `open for the same package: <span class="mono">${esc(g.key)}</span>`;
   return `<tr class="group"><td colspan="7"><b>${g.members.length} PRs</b> ${what}</td></tr>`;
 }
 
