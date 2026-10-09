@@ -628,6 +628,8 @@ function mergedRow(p) {
     <td class="num"><a href="${PR_URL}${p.n}">#${p.n}</a></td>
     <td class="title">${esc(p.title)}</td>
     <td class="num" title="${esc(p.merged)}">${ago(p.merged)}</td>
+    <td>${p.author ? `<a href="https://github.com/${encodeURIComponent(p.author)}">@${esc(p.author)}</a>` : ''}</td>
+    <td>${p.mergedBy ? `<a href="https://github.com/${encodeURIComponent(p.mergedBy)}">@${esc(p.mergedBy)}</a>` : ''}</td>
     <td>${esc(p.base)}</td>
   </tr>`;
 }
@@ -638,7 +640,8 @@ function renderMerged() {
     .filter(
       (p) =>
         (!updates || UPDATE_TITLE.test(p.title)) &&
-        (!q || `#${p.n} ${p.title}`.toLowerCase().includes(q)),
+        (!q ||
+          `#${p.n} ${p.title} @${p.author || ''} @${p.mergedBy || ''}`.toLowerCase().includes(q)),
     )
     .sort((a, b) => b.merged.localeCompare(a.merged));
   $('mcount').textContent = `${list.length.toLocaleString()} PRs`;

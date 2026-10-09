@@ -203,7 +203,10 @@ query($q: String!, $after: String) {
     issueCount
     pageInfo { hasNextPage endCursor }
     nodes {
-      ... on PullRequest { number title isDraft baseRefName mergedAt }
+      ... on PullRequest {
+        number title isDraft baseRefName mergedAt
+        author { login } mergedBy { login }
+      }
     }
   }
   rateLimit { cost remaining resetAt }
@@ -230,8 +233,10 @@ def commit_date(revision, tok):
 
 def merged_since(since, now, tok):
     """PRs merged into master from since to now (datetimes): [{"n", "title",
-    "draft", "base", "merged"}]. Raises when a window has more than search's
-    1,000 results (some would be missing)."""
+    "draft", "base", "merged", "author", "mergedBy"}] (author and mergedBy:
+    GitHub logins, "ghost" for a deleted account; who to credit for an
+    update, in nixkeeper's fixes). Raises when a window has more than
+    search's 1,000 results (some would be missing)."""
     found, start = [], since
     while start < now:
         stop = min(start + timedelta(hours=WINDOW_HOURS), now)
@@ -250,6 +255,8 @@ def merged_since(since, now, tok):
                     "draft": p["isDraft"],
                     "base": p["baseRefName"],
                     "merged": p["mergedAt"],
+                    "author": (p.get("author") or {}).get("login") or "ghost",
+                    "mergedBy": (p.get("mergedBy") or {}).get("login") or "ghost",
                 }
                 for p in page["nodes"]
                 if p and p.get("number")

@@ -117,7 +117,9 @@ On the `data` branch:
 - [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel
-  doesn't yet (`prs`: `[{"n", "title", "draft", "base", "merged"}]`).
+  doesn't yet (`prs`: `[{"n", "title", "draft", "base", "merged", "author",
+  "mergedBy"}]`: who opened it and who merged it, GitHub logins, `ghost` for
+  a deleted account; nixkeeper credits an update's fix to them).
   Listed with GitHub's search in 12-hour windows (it gives at most 1,000
   results).
 - `data/diffs.json`: each PR's fingerprint and diff facts by the head
