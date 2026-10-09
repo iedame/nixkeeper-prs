@@ -25,7 +25,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from . import diffs, facts, fetch, github, sources
+from . import diffs, facts, fetch, github, issues, sources
 
 FORMAT = 1
 MAX_DIFFS = 1500
@@ -154,12 +154,14 @@ def sweep(previous, swept_at, now, tok):
     return prs, "changed", len(listed)
 
 
-def list_issues(directory, tok, now):
-    """Write issues.json (every open issue); on failure keep the last one.
-    Returns meta's "issues" ({"count", "at"}: the last listing that worked)."""
+def list_issues(directory, tok, now, jobs):
+    """Write issues.json (every open issue, a build-failure one with what
+    Hydra says of it: issues.check, its "hydra"); on failure keep the last
+    one. Returns meta's "issues" ({"count", "at", "buildFailures": {verdict:
+    count}}: the last listing that worked)."""
     path = os.path.join(directory, "issues.json")
     try:
-        issues = github.open_issues(tok)
+        found = github.open_issues(tok)
     except (OSError, ValueError, KeyError) as e:
         print(
             f"::warning::Listing open issues failed ({e}): the last kept.",
@@ -167,8 +169,16 @@ def list_issues(directory, tok, now):
         )
         last = read_json(path, {})
         return {"count": len(last.get("issues") or []), "at": last.get("generatedAt")}
-    write_json(path, {"format": FORMAT, "generatedAt": now, "issues": issues})
-    return {"count": len(issues), "at": now}
+    for issue in found:
+        if hydra := issues.check(issue["title"], jobs):
+            issue["hydra"] = hydra
+    write_json(path, {"format": FORMAT, "generatedAt": now, "issues": found})
+    verdicts = Counter(i["hydra"]["verdict"] for i in found if i.get("hydra"))
+    return {
+        "count": len(found),
+        "at": now,
+        "buildFailures": dict(verdicts.most_common()),
+    }
 
 
 def list_merged(directory, tok, now):
@@ -236,13 +246,15 @@ def main(argv=None):
         file=sys.stderr,
     )
     index = sources.channel()
-    master = sources.master(index)
+    hydra_rows = sources.hydra()
+    master = sources.master(index, hydra_rows)
+    jobs = sources.jobs(hydra_rows)
     queue = sources.queue()
     print(
         "Listing open issues and PRs merged since the channel's commit...",
         file=sys.stderr,
     )
-    issues_meta = list_issues(directory, tok, now)
+    issues_meta = list_issues(directory, tok, now, jobs)
     merged_meta = list_merged(directory, tok, now)
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})

@@ -146,7 +146,12 @@ class Sources(unittest.TestCase):
         with mock.patch.object(
             fetch, "get", return_value=gzip.compress(csv_text.encode())
         ):
-            self.assertEqual(sources.master(index), {"wesnoth": "1.18.9"})
+            rows = sources.hydra()
+        self.assertEqual(sources.master(index, rows), {"wesnoth": "1.18.9"})
+        self.assertEqual(
+            sources.jobs(rows)["wesnoth"]["aarch64-linux"],
+            {"status": "ok", "build": "2"},
+        )
 
     def test_queue(self):
         body = {
@@ -353,7 +358,7 @@ class IssuesAndMerged(unittest.TestCase):
                 mock.patch("sys.stderr"),
             ):
                 self.assertEqual(
-                    cli.list_issues(d, "t", "now"), {"count": 1, "at": "then"}
+                    cli.list_issues(d, "t", "now", {}), {"count": 1, "at": "then"}
                 )
             self.assertEqual(
                 cli.read_json(f"{d}/issues.json", {})["generatedAt"], "then"

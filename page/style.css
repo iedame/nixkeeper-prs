@@ -52,6 +52,42 @@ h1 {
 footer {
   color: var(--faint);
 }
+#tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 12px 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+#tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  cursor: pointer;
+}
+#tabs button[aria-pressed="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.note {
+  color: var(--faint);
+  font-size: 13px;
+}
+#issueFilters,
+#mergedFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
 #views {
   display: flex;
   flex-wrap: wrap;

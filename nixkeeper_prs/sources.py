@@ -65,18 +65,37 @@ def channel(url=CHANNEL_INDEX_URL):
     return found
 
 
-def master(index, url=HYDRA_DIGEST_URL):
-    """{attribute: master's version} from what Hydra built last on
-    x86_64-linux: its build's name less the package's name (pname, from
-    the channel's index: "wesnoth-1.18.9" → "1.18.9")."""
+def hydra(url=HYDRA_DIGEST_URL):
+    """nixkeeper-hydra's digest: its rows (every job of master's newest
+    evaluation)."""
     text = gzip.decompress(fetch.get(url)).decode()
+    return list(csv.DictReader(io.StringIO(text)))
+
+
+def master(index, rows):
+    """{attribute: master's version} from what Hydra built last on
+    x86_64-linux (rows: hydra's): its build's name less the package's name
+    (pname, from the channel's index: "wesnoth-1.18.9" → "1.18.9")."""
     found = {}
-    for row in csv.DictReader(io.StringIO(text)):
+    for row in rows:
         if row["system"] != "x86_64-linux" or not row["name"]:
             continue
         pname = (index.get(row["attr"]) or {}).get("pname")
         if pname and row["name"].startswith(pname + "-"):
             found[row["attr"]] = row["name"][len(pname) + 1 :]
+    return found
+
+
+def jobs(rows):
+    """{attribute in lower case: {system: {"status", "build", "reason"?}}}
+    of Hydra's jobs (rows: hydra's); reason: why a failed build failed
+    (nixkeeper-hydra's, from its log)."""
+    found = {}
+    for row in rows:
+        job = {"status": row["status"], "build": row["build"]}
+        if row.get("failedBecause"):
+            job["reason"] = row["failedBecause"]
+        found.setdefault(row["attr"].lower(), {})[row["system"]] = job
     return found
 
 
