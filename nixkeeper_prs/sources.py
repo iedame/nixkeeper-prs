@@ -20,7 +20,7 @@ CHANNEL_INDEX_URL = os.environ.get(
 )
 HYDRA_DIGEST_URL = os.environ.get(
     "NIXKEEPER_PRS_HYDRA_DIGEST",
-    "https://raw.githubusercontent.com/iedame/nixkeeper-hydra/data/data/builds.csv.gz",
+    "https://raw.githubusercontent.com/nixkeeper/digest-builds/data/data/builds.csv.gz",
 )
 CHANNEL_REVISION_URL = os.environ.get(
     "NIXKEEPER_PRS_CHANNEL_REVISION",
@@ -28,7 +28,7 @@ CHANNEL_REVISION_URL = os.environ.get(
 )
 QUEUE_URL = os.environ.get(
     "NIXKEEPER_PRS_QUEUE",
-    "https://raw.githubusercontent.com/iedame/nixkeeper-updates/data/data/queue.json.gz",
+    "https://raw.githubusercontent.com/nixkeeper/digest-update-bot/data/data/queue.json.gz",
 )
 # nixpkgs' aliases: its removed packages (a throw saying why) and renamed
 # ones (an attribute naming the new one), on master.

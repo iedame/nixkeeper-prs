@@ -1,20 +1,20 @@
 # nixkeeper-prs
 
 A digest of [nixpkgs](https://github.com/NixOS/nixpkgs)' open pull requests,
-sorted by what they change, for [nixkeeper](https://github.com/iedame/nixkeeper):
+sorted by what they change, for [nixkeeper](https://github.com/nixkeeper/nixkeeper):
 which ones a maintainer can merge themselves, which are already done in
 nixpkgs, which stop the update bot, which duplicate another. nixpkgs gets
 about 2,000 PRs a week, and a few percent are never merged nor closed: the
 point is surfacing the small, mergeable ones before they're buried.
 
 **A proof of concept**: run hourly, with a plain page at
-<https://iedame.github.io/nixkeeper-prs/> (not linked from nixkeeper.com yet).
+<https://nixkeeper.github.io/digest-prs/> (not linked from nixkeeper.com yet).
 
 ## The digest
 
 On the `data` branch:
 
-- [`data/prs.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/prs.json):
+- [`data/prs.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/prs.json):
   every open PR (`prs`): its number, title, author, draft, dates, base
   branch, head commit, lines added and removed, `changedFiles` and
   `files` (the first 100), labels, `mergeable` (`CONFLICTING`...), `review` (GitHub's
@@ -74,7 +74,7 @@ On the `data` branch:
   already a same-diff group) and `samePackage` (several open updates or
   inits of one attribute into the same branch, `base`: a backport isn't a
   duplicate of the master update).
-- [`data/meta.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/meta.json):
+- [`data/meta.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, the diffs read, and the issues
   and merged PRs listed (`issues`, `merged`: how many and when, and
@@ -82,7 +82,7 @@ On the `data` branch:
   verdict, `issues.updateRequestsTheBotReaches`; `alreadyIn` and
   `hydraFailing`: how many PRs have each; a
   listing that failed keeps the last one, its time saying so).
-- [`data/issues.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/issues.json):
+- [`data/issues.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/issues.json):
   every open issue's number and title (`issues`: `[{"n", "title",
   "hydra"?}]`), for counting a package's issues by the words in their
   titles, as nixkeeper does. A build-failure issue (`Build failure: foo on
@@ -114,7 +114,7 @@ On the `data` branch:
   (the bot's version) and `by` (the day its next try is expected). The
   queue's versions are Repology's, which now and then matches another
   project of the same name.
-- [`data/merged.json`](https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/merged.json):
+- [`data/merged.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/merged.json):
   the PRs merged into master since the nixos-unstable channel's commit
   (`revision`, committed at `since`): what master has that the channel
   doesn't yet (`prs`: `[{"n", "title", "draft", "base", "merged", "author",
@@ -143,9 +143,9 @@ On the `data` branch:
   PRs' `mergeable` is `UNKNOWN`) is caught up by the daily full sweep. The log says how long GitHub takes a request.
 - What nixpkgs has: the nixos-unstable channel's package index (versions,
   maintainers), master's versions from
-  [nixkeeper-hydra](https://github.com/iedame/nixkeeper-hydra)'s digest,
+  [nixkeeper-hydra](https://github.com/nixkeeper/digest-builds)'s digest,
   the update bot's queue from
-  [nixkeeper-updates](https://github.com/iedame/nixkeeper-updates)'.
+  [nixkeeper-updates](https://github.com/nixkeeper/digest-update-bot)'.
   Versions are ordered as nixkeeper orders them (its code, a flake input).
 - Diffs through GitHub's REST API (`pulls/N` as a diff), with the same
   token (its 5,000 requests an hour, apart from GraphQL's points; github.com's

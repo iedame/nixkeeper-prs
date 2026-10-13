@@ -12,7 +12,7 @@
     # libversion, with nixpkgs' "unstable"), so an update PR is superseded
     # or overtaken exactly when nixkeeper would say so.
     nixkeeper = {
-      url = "github:iedame/nixkeeper";
+      url = "github:nixkeeper/nixkeeper";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";

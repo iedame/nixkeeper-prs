@@ -2,7 +2,7 @@
 // branch's data/prs.json), in views (what to act on) and filters, a plain
 // table, more rows as you scroll. Nothing is sent anywhere.
 
-const BASE = 'https://raw.githubusercontent.com/iedame/nixkeeper-prs/data/data/';
+const BASE = 'https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/';
 const DATA = `${BASE}prs.json`;
 const ISSUE_URL = 'https://github.com/NixOS/nixpkgs/issues/';
 const PR_URL = 'https://github.com/NixOS/nixpkgs/pull/';

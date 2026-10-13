@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 
-USER_AGENT = "nixkeeper-prs (+https://github.com/iedame/nixkeeper-prs)"
+USER_AGENT = "nixkeeper-prs (+https://github.com/nixkeeper/digest-prs)"
 GRAPHQL_URL = "https://api.github.com/graphql"
 # Seconds from one request to the next.
 PAUSE = 1.0

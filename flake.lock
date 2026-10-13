@@ -54,13 +54,13 @@
       "locked": {
         "lastModified": 1791499779,
         "narHash": "sha256-ncfy+skgQT7E63K/RPHWFqu+snExd5N5ePuqSZ1oUdA=",
-        "owner": "iedame",
+        "owner": "nixkeeper",
         "repo": "nixkeeper",
         "rev": "3d3ce8a8d4cc654ffc4caf640bdd45e495f45940",
         "type": "github"
       },
       "original": {
-        "owner": "iedame",
+        "owner": "nixkeeper",
         "repo": "nixkeeper",
         "type": "github"
       }
