@@ -1,7 +1,7 @@
 name: "Pages: the proof-of-concept page"
 
 # Publishes page/ to this repository's GitHub Pages
-# (https://iedame.github.io/nixkeeper-prs/): a plain page reading the
+# (https://nixkeeper.github.io/digest-prs/): a plain page reading the
 # digest from the data branch. Not linked from nixkeeper.com while it's a
 # proof of concept.
 
