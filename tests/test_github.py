@@ -358,6 +358,101 @@ class IssuesAndMerged(unittest.TestCase):
         ):
             github.merged_since(start, end, "t")
 
+    def test_merged_into_staging_a_week_at_a_time(self):
+        start = cli.datetime.fromisoformat("2026-09-23T00:00:00+00:00")
+        end = cli.datetime.fromisoformat("2026-10-16T00:00:00+00:00")  # 23 days
+        empty = {
+            "search": {
+                "issueCount": 0,
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            }
+        }
+        with mock.patch.object(fetch, "graphql", return_value=empty) as asked:
+            github.merged_since(start, end, "t", base="staging")
+        self.assertEqual(asked.call_count, 4)  # 7 + 7 + 7 + 2 days
+        self.assertIn("base:staging merged:", asked.call_args_list[0].args[1]["q"])
+
+    def test_staging_next_cycles(self):
+        answer = {
+            "search": {
+                "nodes": [
+                    {
+                        "number": 571813,
+                        "title": "staging-next 2026-10-08",
+                        "state": "OPEN",
+                        "createdAt": "2026-10-08T09:12:00Z",
+                        "mergedAt": None,
+                    },
+                    {
+                        "number": 566094,
+                        "title": "staging-next",  # no date: when it was opened
+                        "state": "MERGED",
+                        "createdAt": "2026-09-23T10:00:00Z",
+                        "mergedAt": "2026-09-28T17:40:27Z",
+                    },
+                ]
+            }
+        }
+        with mock.patch.object(fetch, "graphql", return_value=answer):
+            cycles = github.staging_next_cycles("t")
+        self.assertEqual(
+            [(c["n"], c["open"], c["cut"], c["merged"]) for c in cycles],
+            [
+                (571813, True, "2026-10-08T00:00:00Z", None),
+                (566094, False, "2026-09-23T10:00:00Z", "2026-09-28T17:40:27Z"),
+            ],
+        )
+
+    def test_where_merged_updates_are(self):
+        cycles = [
+            {"n": 3, "open": True, "cut": "2026-10-08T00:00:00Z", "merged": None},
+            {
+                "n": 2,
+                "open": False,
+                "cut": "2026-09-23T00:00:00Z",
+                "merged": "2026-09-28T17:00:00Z",
+            },
+        ]
+        staging = [
+            {"n": 10, "merged": "2026-09-20T00:00:00Z"},  # before the last cut: master
+            {"n": 11, "merged": "2026-09-30T00:00:00Z"},  # before this cut
+            {"n": 12, "merged": "2026-10-12T00:00:00Z"},  # after it
+        ]
+        staging_next = [
+            {"n": 20, "merged": "2026-09-25T00:00:00Z"},  # reached master on 09-28
+            {"n": 21, "merged": "2026-10-10T00:00:00Z"},
+        ]
+        found = cli.on_its_way(cycles, staging, staging_next)
+        self.assertEqual(
+            [(pr["n"], pr["on"]) for pr in found],
+            [(11, "staging-next"), (21, "staging-next"), (12, "staging")],
+        )
+        # Between cycles (no staging-next open): all still on staging.
+        between = cli.on_its_way(cycles[1:], staging, [])
+        self.assertEqual(
+            [(pr["n"], pr["on"]) for pr in between], [(11, "staging"), (12, "staging")]
+        )
+
+    def test_a_failed_staging_listing_keeps_the_last(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            cli.write_json(
+                f"{d}/staging.json",
+                {"generatedAt": "then", "since": "s", "prs": [{"n": 1}]},
+            )
+            with (
+                mock.patch.object(
+                    github, "staging_next_cycles", side_effect=OSError("down")
+                ),
+                mock.patch("sys.stderr"),
+            ):
+                self.assertEqual(
+                    cli.list_staging(d, "t", "2026-10-16T00:00:00+00:00"),
+                    {"count": 1, "at": "then", "stagingNext": None, "since": "s"},
+                )
+
     def test_a_failed_listing_keeps_the_last(self):
         import tempfile
 

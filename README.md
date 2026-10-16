@@ -77,7 +77,8 @@ On the `data` branch:
 - [`data/meta.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/meta.json):
   when, how many PRs, how many in each bucket and state, blocking the bot,
   merge-bot eligible and ready, the groups, the diffs read, and the issues
-  and merged PRs listed (`issues`, `merged`: how many and when, and
+  and merged PRs listed (`issues`, `merged`, `staging`: how many and when,
+  `staging.stagingNext` the cycle, and
   `issues.buildFailures` and `issues.updateRequests`: those issues by
   verdict, `issues.updateRequestsTheBotReaches`; `alreadyIn` and
   `hydraFailing`: how many PRs have each; a
@@ -125,6 +126,17 @@ On the `data` branch:
   failed).
   Listed with GitHub's search in 12-hour windows (it gives at most 1,000
   results).
+- [`data/staging.json`](https://raw.githubusercontent.com/nixkeeper/digest-prs/data/data/staging.json):
+  the PRs merged into staging or staging-next that master doesn't have yet
+  (mass rebuilds: libraries, compilers, glibc), each with where it is
+  (`on`: `staging-next` when merged into it, or into staging before the
+  open staging-next was cut; `staging` when merged into staging since),
+  and the PRs' fields as in `merged.json`. `stagingNext`: the open
+  staging-next PR into master (`open`: `{"n", "title", "open", "cut",
+  "merged"}`, `cut` the day its title names, else when it was opened) and
+  the last merged one (`lastMerged`); what was merged into staging before
+  its cut (`since`) reached master with it, and isn't listed. Listed a
+  week at a time.
 - `data/diffs.json`: each PR's fingerprint and diff facts by the head
   commit it was read at, so a diff is read again only when the PR changes.
 
