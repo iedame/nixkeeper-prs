@@ -245,6 +245,73 @@ def list_merged(directory, tok, now):
     return {"count": len(merged), "at": now, "revision": revision, "since": since}
 
 
+def on_its_way(cycles, staging, staging_next):
+    """The PRs merged into staging or staging-next that master doesn't have
+    yet, each with where it is ("on"): staging-next when merged into it, or
+    into staging before the open staging-next was cut; staging when merged
+    into staging since. Left out: what reached master with the last merged
+    staging-next (merged into staging before it was cut, or into it before
+    it was merged). cycles: staging_next_cycles' list."""
+    current = next((c for c in cycles if c["open"]), None)
+    last = next((c for c in cycles if c["merged"]), None)
+    found = []
+    for pr in staging:
+        if last and pr["merged"] < last["cut"]:
+            continue
+        cut_before = current and pr["merged"] < current["cut"]
+        found.append({**pr, "on": "staging-next" if cut_before else "staging"})
+    for pr in staging_next:
+        if last and pr["merged"] < last["merged"]:
+            continue
+        found.append({**pr, "on": "staging-next"})
+    return sorted(found, key=lambda pr: pr["merged"])
+
+
+def list_staging(directory, tok, now):
+    """Write staging.json (PRs merged into staging or staging-next that
+    master doesn't have yet, and the staging-next cycles); on failure keep
+    the last one. Returns meta's "staging" ({"count", "at", "stagingNext",
+    "since"})."""
+    path = os.path.join(directory, "staging.json")
+    try:
+        cycles = github.staging_next_cycles(tok)
+        last = next((c for c in cycles if c["merged"]), None)
+        if not last:
+            raise OSError("no merged staging-next PR found")
+        since = datetime.fromisoformat(last["cut"].replace("Z", "+00:00"))
+        until = datetime.fromisoformat(now)
+        prs = on_its_way(
+            cycles,
+            github.merged_since(since, until, tok, base="staging"),
+            github.merged_since(since, until, tok, base="staging-next"),
+        )
+    except (OSError, ValueError, KeyError) as e:
+        print(
+            f"::warning::Listing staging's merged PRs failed ({e}): the last kept.",
+            file=sys.stderr,
+        )
+        kept = read_json(path, {})
+        return {
+            "count": len(kept.get("prs") or []),
+            "at": kept.get("generatedAt"),
+            "stagingNext": kept.get("stagingNext"),
+            "since": kept.get("since"),
+        }
+    current = next((c for c in cycles if c["open"]), None)
+    cycle = {"open": current, "lastMerged": last}
+    write_json(
+        path,
+        {
+            "format": FORMAT,
+            "generatedAt": now,
+            "since": last["cut"],
+            "stagingNext": cycle,
+            "prs": prs,
+        },
+    )
+    return {"count": len(prs), "at": now, "stagingNext": cycle, "since": last["cut"]}
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     directory = argv[0] if argv else "data"
@@ -287,6 +354,7 @@ def main(argv=None):
         directory, tok, now, jobs, index, master, open_updates(prs), queue, aliases
     )
     merged_meta = list_merged(directory, tok, now)
+    staging_meta = list_staging(directory, tok, now)
 
     cache = read_json(os.path.join(directory, "diffs.json"), {})
     # The diffs' time starts now, whatever the PRs took.
@@ -322,6 +390,7 @@ def main(argv=None):
         "diffs": {"known": len(cache), "readNow": read, "pending": pending},
         "issues": issues_meta,
         "merged": merged_meta,
+        "staging": staging_meta,
     }
     write_json(os.path.join(directory, "diffs.json"), cache)
     write_json(

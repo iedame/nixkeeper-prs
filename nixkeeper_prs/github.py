@@ -223,8 +223,23 @@ query($rev: String!) {
 """
 # GitHub's search gives at most 1,000 results: merged PRs are listed in
 # windows of this many hours (nixpkgs merges a few hundred a day into master),
-# as nixkeeper's own listing does.
+# as nixkeeper's own listing does; into staging and staging-next, a few
+# dozen a day at most: a week at a time.
 WINDOW_HOURS = 12
+STAGING_WINDOW_HOURS = 24 * 7
+# The staging-next PRs into master: each is a cycle, its branch cut from
+# staging on the day its title names ("staging-next 2026-10-08").
+STAGING_NEXT = (
+    "repo:NixOS/nixpkgs is:pr base:master head:staging-next sort:created-desc"
+)
+STAGING_NEXT_QUERY = """
+query($q: String!) {
+  search(type: ISSUE, first: 5, query: $q) {
+    nodes { ... on PullRequest { number title state createdAt mergedAt } }
+  }
+}
+"""
+CUT_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 
 def commit_date(revision, tok):
@@ -233,19 +248,44 @@ def commit_date(revision, tok):
     return ((data.get("repository") or {}).get("object") or {}).get("committedDate")
 
 
-def merged_since(since, now, tok):
-    """PRs merged into master from since to now (datetimes): [{"n", "title",
+def staging_next_cycles(tok):
+    """The newest staging-next PRs into master, newest first: [{"n", "title",
+    "open", "cut", "merged"}]: cut, when its branch was cut from staging
+    (the date its title names, else when the PR was opened); merged, when
+    it reached master (None while open)."""
+    data = fetch.graphql(STAGING_NEXT_QUERY, {"q": STAGING_NEXT}, tok)
+    cycles = []
+    for p in (data.get("search") or {}).get("nodes") or []:
+        if not p or not p.get("number"):
+            continue
+        named = CUT_DATE.search(p.get("title") or "")
+        cycles.append(
+            {
+                "n": p["number"],
+                "title": p.get("title") or "",
+                "open": p.get("state") == "OPEN",
+                "cut": f"{named.group(1)}T00:00:00Z" if named else p["createdAt"],
+                "merged": p.get("mergedAt"),
+            }
+        )
+    return cycles
+
+
+def merged_since(since, now, tok, base="master"):
+    """PRs merged into base (master, staging, ...) from since to now
+    (datetimes): [{"n", "title",
     "draft", "base", "merged", "author", "mergedBy", "packages"}] (author
     and mergedBy: GitHub logins, "ghost" for a deleted account; packages:
     the pkgs/by-name ones its files touch, of its first 100 files: who to
     credit for an update, and likely for a build fix, in nixkeeper's
     fixes). Raises when a window has more than search's 1,000 results
     (some would be missing)."""
+    hours = WINDOW_HOURS if base == "master" else STAGING_WINDOW_HOURS
     found, start = [], since
     while start < now:
-        stop = min(start + timedelta(hours=WINDOW_HOURS), now)
+        stop = min(start + timedelta(hours=hours), now)
         window = f"{start:%Y-%m-%dT%H:%M:%SZ}..{stop:%Y-%m-%dT%H:%M:%SZ}"
-        query = f"repo:NixOS/nixpkgs is:pr is:merged base:master merged:{window}"
+        query = f"repo:NixOS/nixpkgs is:pr is:merged base:{base} merged:{window}"
         after = None
         while True:
             data = fetch.graphql(MERGED_QUERY, {"q": query, "after": after}, tok)
